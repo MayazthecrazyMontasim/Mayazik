@@ -493,6 +493,27 @@ input[type=range].sl.lav::-webkit-slider-thumb   { border-color: var(--lavender)
   margin-top: 3px;
 }
 .clip-acts { display: flex; gap: 6px; }
+.clip-preview {
+  display: none;
+  width: 100%; border-radius: 10px; overflow: hidden;
+  margin-top: 10px; background: #000;
+  aspect-ratio: 16/9;
+}
+.clip-preview video {
+  width: 100%; height: 100%; display: block; object-fit: cover;
+}
+.clip-card.expanded .clip-preview { display: block; }
+.clip-card.expanded { flex-wrap: wrap; }
+.clip-thumb-wrap {
+  position: relative; flex-shrink: 0; cursor: pointer;
+}
+.play-badge {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(0,0,0,0.3); border-radius: 8px;
+  opacity: 0; transition: opacity 0.15s;
+}
+.clip-thumb-wrap:hover .play-badge, .clip-card.expanded .play-badge { opacity: 1; }
 .clip-btn {
   font-family: 'DM Mono', monospace;
   font-size: 9px; font-weight: 500;
@@ -1041,17 +1062,48 @@ function renderClips() {
   const el = document.getElementById('clips-list');
   if (!clips.length) { el.innerHTML='<div class="no-clips">No clips recorded yet</div>'; return; }
   el.innerHTML = clips.map((c,i)=>`
-    <div class="clip-card">
-      <img class="clip-thumb" src="${c.thumb}">
-      <div class="clip-info">
+    <div class="clip-card" id="clip-card-${i}">
+      <div class="clip-thumb-wrap" onclick="togglePreview(${i})">
+        <img class="clip-thumb" src="${c.thumb}">
+        <div class="play-badge">
+          <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+            <circle cx="9" cy="9" r="8" fill="rgba(255,255,255,0.9)"/>
+            <path d="M7 6l6 3-6 3V6z" fill="#1c1a18"/>
+          </svg>
+        </div>
+      </div>
+      <div class="clip-info" onclick="togglePreview(${i})" style="cursor:pointer;">
         <div class="clip-name">${c.name} · ${c.sim}</div>
-        <div class="clip-meta">${c.dur} · WebM</div>
+        <div class="clip-meta">${c.dur} · WebM · tap to preview</div>
       </div>
       <div class="clip-acts">
         <button class="clip-btn save" onclick="downloadClip(${i})">Save</button>
         <button class="clip-btn del" onclick="deleteClip(${i})">Del</button>
       </div>
+      <div class="clip-preview" id="clip-preview-${i}">
+        <video id="clip-video-${i}" src="${c.url}" controls playsinline style="width:100%;height:100%;border-radius:10px;"></video>
+      </div>
     </div>`).join('');
+}
+
+function togglePreview(i) {
+  const card = document.getElementById('clip-card-' + i);
+  const vid  = document.getElementById('clip-video-' + i);
+  const isOpen = card.classList.contains('expanded');
+
+  // close all others first
+  document.querySelectorAll('.clip-card.expanded').forEach(c => {
+    c.classList.remove('expanded');
+    const v = c.querySelector('video');
+    if (v) { v.pause(); }
+  });
+
+  if (!isOpen) {
+    card.classList.add('expanded');
+    vid.play();
+    // smooth scroll so player is visible
+    setTimeout(() => card.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 100);
+  }
 }
 
 function downloadClip(i) {
