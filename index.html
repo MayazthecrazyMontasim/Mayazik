@@ -572,15 +572,16 @@ input[type=file] { display: none; }
     </div>
   </div>
 
-  <div class="idle-overlay" id="idle-overlay" onclick="handleIdleClick()">
-    <div class="idle-icon">
+  <div class="idle-overlay" id="idle-overlay">
+    <div class="idle-icon" style="margin-bottom:4px;">
       <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
         <circle cx="14" cy="14" r="9" stroke="rgba(255,255,255,0.4)" stroke-width="1.5"/>
         <circle cx="14" cy="14" r="5" fill="rgba(255,255,255,0.2)"/>
         <path d="M5 8l3-3 1.5 2" stroke="rgba(255,255,255,0.3)" stroke-width="1.5" stroke-linecap="round"/>
       </svg>
     </div>
-    <div class="idle-text" id="idle-text">Tap to open camera<br>or load a photo</div>
+    <div onclick="setMode('live')" style="cursor:pointer;background:rgba(139,117,201,0.85);color:#fff;font-family:'DM Mono',monospace;font-size:11px;letter-spacing:1.5px;text-transform:uppercase;padding:10px 22px;border-radius:30px;margin-bottom:10px;">Open Camera</div>
+    <div onclick="document.getElementById('file-input').click()" style="cursor:pointer;background:rgba(255,255,255,0.12);color:rgba(255,255,255,0.6);font-family:'DM Mono',monospace;font-size:10px;letter-spacing:1px;text-transform:uppercase;padding:8px 18px;border-radius:30px;border:1px solid rgba(255,255,255,0.2);">or load a photo / video</div>
   </div>
   <div class="flash-ol" id="flash-ol"></div>
 </div>
@@ -862,7 +863,7 @@ function setMode(m) {
   sb.className = 'shutter-btn' + (m==='video'?' video-mode':m==='live'?' live-mode':'');
   if (m==='photo')  { clipsSec.style.display='none';  flipBtn.style.display='none';  stopLive(); }
   if (m==='video')  { clipsSec.style.display='block'; flipBtn.style.display='none';  stopLive(); }
-  if (m==='live')   { clipsSec.style.display='block'; flipBtn.style.display='flex';  startLive(); }
+  if (m==='live')   { clipsSec.style.display='block'; flipBtn.style.display='flex';  document.getElementById('idle-overlay').style.display='none'; startLive(); }
 }
 
 function handleIdleClick() {
