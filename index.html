@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#fff8f2">
-<title>FUJI CAM</title>
+<title>Mayazik</title>
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;1,500&family=DM+Mono:wght@400;500&family=Lato:wght@300;400;700&display=swap" rel="stylesheet">
 <style>
 :root{--cream:#fff8f2;--warm:#fffcf9;--coral:#f4735a;--coral-l:#fce8e3;--jade:#3db89c;--jade-l:#e0f5ef;--amber:#f0a500;--amber-l:#fef3d0;--lav:#8b75c9;--lav-l:#ede8f8;--ink:#1c1a18;--ink2:#4a453f;--ink3:#9a8f85;--ink4:#e8e0d8;--border:rgba(28,26,24,0.1);--sh:0 2px 10px rgba(28,26,24,0.08);}
@@ -311,7 +311,16 @@ function updSl(k,el){
 function openCamera(){
   if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){alert('Camera not available.\nThis app needs HTTPS to access the camera.');return;}
   if(liveStream){liveStream.getTracks().forEach(t=>t.stop());liveStream=null;}
-  navigator.mediaDevices.getUserMedia({video:{facingMode:facing,width:{ideal:1920},height:{ideal:1080}},audio:true})
+  navigator.mediaDevices.getUserMedia({
+    video:{
+      facingMode:facing,
+      width:{ideal:3840, min:1280},
+      height:{ideal:2160, min:720},
+      frameRate:{ideal:30, min:15},
+      aspectRatio:{ideal:16/9}
+    },
+    audio:true
+  })
   .then(s=>{
     liveStream=s; srcEl=null;
     const rv=document.getElementById('raw-video');
@@ -325,64 +334,161 @@ function openCamera(){
 
 function flipCam(){facing=facing==='environment'?'user':'environment';openCamera();}
 
-function startLoop(){
-  if(rafId){cancelAnimationFrame(rafId);rafId=null;}
-  const rv=document.getElementById('raw-video');
-  const canvas=document.getElementById('main-canvas');
-  startTC();
-  function tick(){
-    rafId=requestAnimationFrame(tick);
-    if(!liveStream)return;
-    if(rv.readyState<2||rv.videoWidth===0)return;
-    if(canvas.width!==rv.videoWidth){canvas.width=rv.videoWidth;canvas.height=rv.videoHeight;}
-    const ctx=canvas.getContext('2d');
-    ctx.save();
-    if(facing==='user'){ctx.translate(canvas.width,0);ctx.scale(-1,1);}
-    ctx.drawImage(rv,0,0);
-    ctx.restore();
-    applyFilters(canvas);
-    if(ovZ)drawZebra(canvas);
-  }
-  tick();
-  setInterval(()=>{if(liveStream)buildHist();},500);
+
+// ── WebGL FILTER ENGINE ────────────────────────────────────
+let gl=null, glProg=null, glTex=null, glCanvas=null;
+
+function initGL(){
+  glCanvas=document.getElementById('main-canvas');
+  gl=glCanvas.getContext('webgl',{preserveDrawingBuffer:true,antialias:false});
+  if(!gl){console.warn('WebGL not available, falling back to 2D');return false;}
+
+  const vsrc=`
+    attribute vec2 a_pos;
+    attribute vec2 a_uv;
+    varying vec2 v_uv;
+    uniform bool u_flip;
+    void main(){
+      v_uv = u_flip ? vec2(1.0-a_uv.x, a_uv.y) : a_uv;
+      gl_Position = vec4(a_pos,0,1);
+    }`;
+
+  const fsrc=`
+    precision mediump float;
+    varying vec2 v_uv;
+    uniform sampler2D u_tex;
+    uniform float u_brightness;
+    uniform float u_contrast;
+    uniform float u_saturation;
+    uniform vec3 u_shadowTint;
+    uniform vec3 u_midTint;
+    uniform vec3 u_mult;
+    uniform float u_fade;
+    uniform vec3 u_lift;
+    uniform float u_hsc;
+    uniform float u_vig;
+    uniform float u_hlShift;
+    uniform float u_shShift;
+    uniform float u_grain;
+    uniform float u_time;
+
+    float rand(vec2 co){return fract(sin(dot(co,vec2(12.9898,78.233)))*43758.5453);}
+
+    void main(){
+      vec4 c = texture2D(u_tex, v_uv);
+      vec3 col = c.rgb;
+
+      // contrast + brightness
+      col = (col - 0.5) * u_contrast + 0.5 + u_brightness;
+
+      // saturation
+      float lum = dot(col, vec3(0.299,0.587,0.114));
+      col = mix(vec3(lum), col, u_saturation);
+
+      // shadow / highlight masks
+      float sm = max(0.0, 1.0 - lum*3.0);
+      float hm = max(0.0, lum*2.0 - 1.0);
+
+      // shadow tint + mid tint
+      col += u_shadowTint * sm + u_midTint;
+
+      // highlight / shadow shift
+      col += hm * u_hlShift;
+      col += sm * u_shShift;
+
+      // channel multipliers
+      col *= u_mult;
+
+      // film lift (faded blacks)
+      if(u_fade > 0.0) col = mix(col, vec3(1.0), u_fade);
+
+      // shadow lift (nostalgic neg)
+      col += u_lift * sm;
+
+      // cyan hue shift
+      if(u_hsc != 0.0){
+        float cy = max(0.0, min(col.g, col.b) - col.r);
+        col.g += u_hsc * cy * 0.5;
+        col.b += u_hsc * cy * 0.3;
+      }
+
+      // grain
+      if(u_grain > 0.0){
+        float g = (rand(v_uv + u_time) - 0.5) * u_grain * 0.04;
+        col += vec3(g, g*0.9, g*0.8);
+      }
+
+      // vignette
+      if(u_vig > 0.0){
+        vec2 uv2 = v_uv * 2.0 - 1.0;
+        float d = length(uv2 * vec2(1.0, 1.0));
+        float vig = smoothstep(0.4, 1.4, d) * u_vig * 0.85;
+        col = mix(col, vec3(0.0), vig);
+      }
+
+      gl_FragColor = vec4(clamp(col,0.0,1.0), 1.0);
+    }`;
+
+  const vs=gl.createShader(gl.VERTEX_SHADER); gl.shaderSource(vs,vsrc); gl.compileShader(vs);
+  const fs=gl.createShader(gl.FRAGMENT_SHADER); gl.shaderSource(fs,fsrc); gl.compileShader(fs);
+  if(!gl.getShaderParameter(fs,gl.COMPILE_STATUS)){console.error(gl.getShaderInfoLog(fs));return false;}
+
+  glProg=gl.createProgram();
+  gl.attachShader(glProg,vs); gl.attachShader(glProg,fs); gl.linkProgram(glProg);
+  gl.useProgram(glProg);
+
+  const verts=new Float32Array([-1,-1,0,1, 1,-1,1,1, -1,1,0,0, 1,1,1,0]);
+  const buf=gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER,buf); gl.bufferData(gl.ARRAY_BUFFER,verts,gl.STATIC_DRAW);
+  const ap=gl.getAttribLocation(glProg,'a_pos'); gl.enableVertexAttribArray(ap); gl.vertexAttribPointer(ap,2,gl.FLOAT,false,16,0);
+  const au=gl.getAttribLocation(glProg,'a_uv');  gl.enableVertexAttribArray(au); gl.vertexAttribPointer(au,2,gl.FLOAT,false,16,8);
+
+  glTex=gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D,glTex);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+
+  return true;
 }
 
-function startVideoLoop(vid){
-  if(rafId){cancelAnimationFrame(rafId);rafId=null;}
-  const canvas=document.getElementById('main-canvas');
-  startTC();
-  function tick(){
-    rafId=requestAnimationFrame(tick);
-    if(vid.readyState<2)return;
-    if(canvas.width!==vid.videoWidth){canvas.width=vid.videoWidth;canvas.height=vid.videoHeight;}
-    canvas.getContext('2d').drawImage(vid,0,0);
-    applyFilters(canvas);
-    if(ovZ)drawZebra(canvas);
-  }
-  tick();
-  setInterval(()=>buildHist(),500);
+function renderGL(source, flipH){
+  if(!gl||!glProg) return false;
+  const s=SIMS[simKey];
+  const w = source.videoWidth||source.naturalWidth||source.width;
+  const h = source.videoHeight||source.naturalHeight||source.height;
+  if(!w||!h) return false;
+  if(glCanvas.width!==w||glCanvas.height!==h){glCanvas.width=w;glCanvas.height=h;}
+  gl.viewport(0,0,w,h);
+  gl.bindTexture(gl.TEXTURE_2D,glTex);
+  try{ gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,source); }
+  catch(e){ return false; }
+  const u=(n)=>gl.getUniformLocation(glProg,n);
+  const hlS=(ctrl.hl*8)/255, shS=(ctrl.sh*8)/255;
+  const satAdj=1+(s.sa+ctrl.col*10)/100;
+  const grainAmt=(ctrl.grain+(s.gr||0))/2/10;
+  gl.uniform1i(u('u_tex'),0);
+  gl.uniform1i(u('u_flip'), flipH?1:0);
+  gl.uniform1f(u('u_brightness'), s.br/100);
+  gl.uniform1f(u('u_contrast'),   1+s.co/100);
+  gl.uniform1f(u('u_saturation'), satAdj);
+  gl.uniform3f(u('u_shadowTint'), s.sh[0],s.sh[1],s.sh[2]);
+  gl.uniform3f(u('u_midTint'),    s.mt[0],s.mt[1],s.mt[2]);
+  gl.uniform3f(u('u_mult'),       s.r,s.g,s.b);
+  gl.uniform1f(u('u_fade'),       s.fade||0);
+  gl.uniform3f(u('u_lift'),       s.liftR||0,s.liftG||0,s.liftB||0);
+  gl.uniform1f(u('u_hsc'),        s.hsc||0);
+  gl.uniform1f(u('u_vig'),        ctrl.vig/10);
+  gl.uniform1f(u('u_hlShift'),    hlS);
+  gl.uniform1f(u('u_shShift'),    shS);
+  gl.uniform1f(u('u_grain'),      grainAmt);
+  gl.uniform1f(u('u_time'),       (Date.now()%10000)/10000);
+  gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
+  return true;
 }
 
-function renderStatic(){
-  if(!srcEl)return;
-  const canvas=document.getElementById('main-canvas');
-  const wrap=document.getElementById('vf-wrap');
-  const dpr=window.devicePixelRatio||1;
-  const W=wrap.clientWidth*dpr, H=Math.round(W*9/16);
-  if(canvas.width!==W){canvas.width=W;canvas.height=H;}
-  const ctx=canvas.getContext('2d');
-  const iw=srcEl.naturalWidth||srcEl.videoWidth;
-  const ih=srcEl.naturalHeight||srcEl.videoHeight;
-  const ar=iw/ih, car=W/H;
-  let sx=0,sy=0,sw=iw,sh=ih;
-  if(ar>car){sw=ih*car;sx=(iw-sw)/2;}else{sh=iw/car;sy=(ih-sh)/2;}
-  ctx.drawImage(srcEl,sx,sy,sw,sh,0,0,W,H);
-  applyFilters(canvas);
-  if(ovZ)drawZebra(canvas);
-  buildHist();
-}
-
-function applyFilters(canvas){
+// fallback CPU filter for when WebGL unavailable
+function applyFiltersCPU(canvas){
   const sim=SIMS[simKey];
   const ctx=canvas.getContext('2d');
   const cw=canvas.width,ch=canvas.height;
@@ -418,6 +524,82 @@ function applyFilters(canvas){
     ctx.fillStyle=gr;ctx.fillRect(0,0,cw,ch);
   }
 }
+
+let glReady = false;
+
+function startLoop(){
+  if(rafId){cancelAnimationFrame(rafId);rafId=null;}
+  if(!glReady) glReady = initGL();
+  const rv=document.getElementById('raw-video');
+  startTC();
+  function tick(){
+    rafId=requestAnimationFrame(tick);
+    if(!liveStream)return;
+    if(rv.readyState<2||rv.videoWidth===0)return;
+    const rendered = renderGL(rv, facing==='user');
+    if(!rendered){
+      // fallback: draw to canvas then CPU filter
+      const canvas=document.getElementById('main-canvas');
+      if(canvas.width!==rv.videoWidth){canvas.width=rv.videoWidth;canvas.height=rv.videoHeight;}
+      const ctx=canvas.getContext('2d');
+      ctx.save(); if(facing==='user'){ctx.translate(canvas.width,0);ctx.scale(-1,1);} ctx.drawImage(rv,0,0); ctx.restore();
+      applyFiltersCPU(canvas);
+    }
+    if(ovZ)drawZebra(document.getElementById('main-canvas'));
+  }
+  tick();
+  setInterval(()=>{if(liveStream)buildHist();},600);
+}
+
+function startVideoLoop(vid){
+  if(rafId){cancelAnimationFrame(rafId);rafId=null;}
+  if(!glReady) glReady = initGL();
+  startTC();
+  function tick(){
+    rafId=requestAnimationFrame(tick);
+    if(vid.readyState<2)return;
+    const rendered = renderGL(vid, false);
+    if(!rendered){
+      const canvas=document.getElementById('main-canvas');
+      if(canvas.width!==vid.videoWidth){canvas.width=vid.videoWidth;canvas.height=vid.videoHeight;}
+      canvas.getContext('2d').drawImage(vid,0,0);
+      applyFiltersCPU(canvas);
+    }
+    if(ovZ)drawZebra(document.getElementById('main-canvas'));
+  }
+  tick();
+  setInterval(()=>buildHist(),600);
+}
+
+function renderStatic(){
+  if(!srcEl)return;
+  if(!glReady) glReady = initGL();
+  const canvas=document.getElementById('main-canvas');
+  const wrap=document.getElementById('vf-wrap');
+  const dpr=Math.min(window.devicePixelRatio||1, 2);
+  const W=wrap.clientWidth*dpr, H=Math.round(W*9/16);
+  // for static images use a temp canvas to crop first, then render
+  const tmp=document.createElement('canvas');
+  const iw=srcEl.naturalWidth||srcEl.videoWidth;
+  const ih=srcEl.naturalHeight||srcEl.videoHeight;
+  if(!iw||!ih)return;
+  const ar=iw/ih, car=W/H;
+  let sx=0,sy=0,sw=iw,sh=ih;
+  if(ar>car){sw=ih*car;sx=(iw-sw)/2;}else{sh=iw/car;sy=(ih-sh)/2;}
+  tmp.width=Math.round(sw); tmp.height=Math.round(sh);
+  tmp.getContext('2d').drawImage(srcEl,sx,sy,sw,sh,0,0,tmp.width,tmp.height);
+  const rendered = renderGL(tmp, false);
+  if(!rendered){
+    if(canvas.width!==W){canvas.width=W;canvas.height=H;}
+    canvas.getContext('2d').drawImage(srcEl,sx,sy,sw,sh,0,0,W,H);
+    applyFiltersCPU(canvas);
+  }
+  if(ovZ)drawZebra(canvas);
+  buildHist();
+}
+
+// keep applyFilters as alias for compatibility
+function applyFilters(canvas){ applyFiltersCPU(canvas); }
 
 function drawZebra(src){
   const zc=document.getElementById('zebra-canvas');
