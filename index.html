@@ -306,17 +306,14 @@ html, body {
   background: var(--jade-light);
   border-color: var(--jade);
 }
-.mode-btn.active-live {
-  background: var(--lavender-light);
-  border-color: var(--lavender);
-}
+
 .mode-icon {
   width: 28px; height: 28px; border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
 }
 .mode-btn.active-photo .mode-icon { background: var(--coral); }
 .mode-btn.active-video .mode-icon { background: var(--jade); }
-.mode-btn.active-live .mode-icon { background: var(--lavender); }
+
 .mode-btn:not(.active-photo):not(.active-video):not(.active-live) .mode-icon {
   background: var(--ink-faint);
 }
@@ -329,7 +326,7 @@ html, body {
 }
 .mode-btn.active-photo .mode-label { color: var(--coral); }
 .mode-btn.active-video .mode-label { color: var(--jade); }
-.mode-btn.active-live .mode-label { color: var(--lavender); }
+
 
 /* Overlay toggles */
 .overlay-row { display: flex; gap: 8px; flex-wrap: wrap; }
@@ -432,7 +429,7 @@ input[type=range].sl.lav::-webkit-slider-thumb   { border-color: var(--lavender)
   position: absolute;
 }
 .shutter-btn.video-mode { background: var(--jade); box-shadow: 0 4px 16px rgba(61,184,156,0.4); }
-.shutter-btn.live-mode  { background: var(--lavender); box-shadow: 0 4px 16px rgba(139,117,201,0.4); }
+
 .shutter-btn.recording  { background: #e0342a; animation: rec-pulse 1.2s infinite; }
 @keyframes rec-pulse { 0%,100%{box-shadow:0 4px 16px rgba(224,52,42,0.5);}50%{box-shadow:0 4px 28px rgba(224,52,42,0.8);} }
 
@@ -679,16 +676,7 @@ input[type=file] { display: none; }
       </div>
       <div class="mode-label">Video</div>
     </div>
-    <div class="mode-btn" id="mb-live" onclick="setMode('live')">
-      <div class="mode-icon">
-        <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-          <circle cx="7" cy="7" r="2.5" stroke="#888" stroke-width="1.5"/>
-          <path d="M3 7a4 4 0 004 4m0-8a4 4 0 014 4" stroke="#888" stroke-width="1.5" stroke-linecap="round"/>
-          <path d="M1 7a6 6 0 006 6m0-12a6 6 0 016 6" stroke="#888" stroke-width="1.2" stroke-linecap="round"/>
-        </svg>
-      </div>
-      <div class="mode-label">Live</div>
-    </div>
+
   </div>
 
   <!-- Overlay toggles -->
@@ -871,7 +859,7 @@ function drawZebra(src) {
 
 function setMode(m) {
   camMode = m;
-  const modes = ['photo','video','live'];
+  const modes = ['photo','video'];
   modes.forEach(x => {
     const btn = document.getElementById('mb-'+x);
     btn.className = 'mode-btn' + (x===m ? ' active-'+x : '');
@@ -882,7 +870,7 @@ function setMode(m) {
   const sb = document.getElementById('shutter-btn');
 
   // update shutter button color per mode
-  sb.classList.remove('video-mode','live-mode','recording');
+  sb.classList.remove('video-mode','recording');
   if (m==='video') sb.classList.add('video-mode');
 
   // show/hide clips panel
