@@ -580,8 +580,8 @@ input[type=file] { display: none; }
         <path d="M5 8l3-3 1.5 2" stroke="rgba(255,255,255,0.3)" stroke-width="1.5" stroke-linecap="round"/>
       </svg>
     </div>
-    <div onclick="setMode('live')" style="cursor:pointer;background:rgba(139,117,201,0.85);color:#fff;font-family:'DM Mono',monospace;font-size:11px;letter-spacing:1.5px;text-transform:uppercase;padding:10px 22px;border-radius:30px;margin-bottom:10px;">Open Camera</div>
-    <div onclick="document.getElementById('file-input').click()" style="cursor:pointer;background:rgba(255,255,255,0.12);color:rgba(255,255,255,0.6);font-family:'DM Mono',monospace;font-size:10px;letter-spacing:1px;text-transform:uppercase;padding:8px 18px;border-radius:30px;border:1px solid rgba(255,255,255,0.2);">or load a photo / video</div>
+    <div onclick="setMode('live')" style="cursor:pointer;background:rgba(139,117,201,0.9);color:#fff;font-family:'DM Mono',monospace;font-size:12px;letter-spacing:1.5px;text-transform:uppercase;padding:12px 28px;border-radius:30px;margin-bottom:12px;box-shadow:0 4px 20px rgba(139,117,201,0.5);">Open Camera</div>
+    <div onclick="document.getElementById('file-input').click()" style="cursor:pointer;background:rgba(255,255,255,0.1);color:rgba(255,255,255,0.5);font-family:'DM Mono',monospace;font-size:10px;letter-spacing:1px;text-transform:uppercase;padding:8px 18px;border-radius:30px;border:1px solid rgba(255,255,255,0.15);">or load a photo / video</div>
   </div>
   <div class="flash-ol" id="flash-ol"></div>
 </div>
@@ -802,7 +802,8 @@ function updateSlider(name, el) {
   const min = parseFloat(el.min), max = parseFloat(el.max);
   const pct = Math.round(((val-min)/(max-min))*100)+'%';
   el.style.setProperty('--pct', pct);
-  if (sourceImage && !sourceVideo) renderFromSource();
+  // live/video modes update via render loop automatically
+  if (sourceImage && !sourceVideo && !liveStream) renderFromSource();
 }
 
 function initSliders() {
@@ -925,8 +926,13 @@ function startTimecode() {
 }
 
 function triggerShutter() {
-  if (camMode==='live' && isRecording) { stopRecord(); return; }
-  if (camMode==='live' && liveStream)  { if(!isRecording) startRecord(); return; }
+  // In live mode, shutter always snaps a still with current filter applied
+  if (camMode==='live' && liveStream) {
+    const fl = document.getElementById('flash-ol');
+    fl.style.animation='none'; void fl.offsetWidth; fl.style.animation='flash-go 0.3s ease-out forwards';
+    snapFrame();
+    return;
+  }
   if (camMode==='video' && sourceVideo) { if(!isRecording) startRecord(); else stopRecord(); return; }
   const fl = document.getElementById('flash-ol');
   fl.style.animation='none'; void fl.offsetWidth; fl.style.animation='flash-go 0.3s ease-out forwards';
@@ -1099,7 +1105,9 @@ function selectSim(k, el) {
   const vigEl=document.getElementById('sl-vignette'); vigEl.value=sim.vignette; updateSlider('vignette',vigEl);
   document.getElementById('sv-grain').textContent=sim.grain;
   document.getElementById('sv-vignette').textContent=sim.vignette;
-  if(sourceImage&&!sourceVideo)renderFromSource();
+  ctrl.grain=sim.grain; ctrl.vignette=sim.vignette;
+  // live mode updates automatically via render loop — no need to re-render
+  if(sourceImage&&!sourceVideo) renderFromSource();
 }
 
 function saveOutput() {
