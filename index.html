@@ -36,6 +36,12 @@
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+button, .sim-chip, .dial-card, .mode-btn, .ov-toggle, .side-action, .clip-card {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  touch-action: manipulation;
+}
 
 html, body {
   width: 100%; min-height: 100%;
@@ -598,8 +604,8 @@ input[type=file] { display: none; }
         <path d="M5 8l3-3 1.5 2" stroke="rgba(255,255,255,0.3)" stroke-width="1.5" stroke-linecap="round"/>
       </svg>
     </div>
-    <div onclick="startCamera()" style="cursor:pointer;background:rgba(139,117,201,0.9);color:#fff;font-family:'DM Mono',monospace;font-size:12px;letter-spacing:1.5px;text-transform:uppercase;padding:12px 28px;border-radius:30px;margin-bottom:12px;box-shadow:0 4px 20px rgba(139,117,201,0.5);">Open Camera</div>
-    <div onclick="document.getElementById('file-input').click()" style="cursor:pointer;background:rgba(255,255,255,0.1);color:rgba(255,255,255,0.5);font-family:'DM Mono',monospace;font-size:10px;letter-spacing:1px;text-transform:uppercase;padding:8px 18px;border-radius:30px;border:1px solid rgba(255,255,255,0.15);">or load a photo / video</div>
+    <button id="open-cam-btn" style="-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;touch-action:manipulation;cursor:pointer;background:rgba(139,117,201,0.9);color:#fff;font-family:'DM Mono',monospace;font-size:12px;letter-spacing:1.5px;text-transform:uppercase;padding:14px 32px;border-radius:30px;margin-bottom:12px;box-shadow:0 4px 20px rgba(139,117,201,0.5);border:none;outline:none;">Open Camera</button>
+    <button id="load-media-btn" style="-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;touch-action:manipulation;cursor:pointer;background:rgba(255,255,255,0.1);color:rgba(255,255,255,0.5);font-family:'DM Mono',monospace;font-size:10px;letter-spacing:1px;text-transform:uppercase;padding:10px 20px;border-radius:30px;border:1px solid rgba(255,255,255,0.15);outline:none;">Or load a photo / video</button>
   </div>
   <div class="flash-ol" id="flash-ol"></div>
 </div>
@@ -1233,6 +1239,18 @@ function saveOutput() {
 
 // init
 initSliders(); updateMetaPill();
+
+// Mobile-friendly touch handlers for idle overlay buttons
+(function() {
+  function bindBtn(id, fn) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener('touchstart', function(e) { e.preventDefault(); fn(); }, {passive: false});
+    el.addEventListener('click', fn);
+  }
+  bindBtn('open-cam-btn', startCamera);
+  bindBtn('load-media-btn', function() { document.getElementById('file-input').click(); });
+})();
 </script>
 </body>
 </html>
