@@ -1,0 +1,1116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="light-content">
+<meta name="theme-color" content="#fff8f2">
+<title>FUJI CAM — Film Simulator</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,500;0,700;1,500&family=DM+Mono:wght@400;500&family=Lato:wght@300;400;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --cream: #fff8f2;
+  --warm-white: #fffcf9;
+  --coral: #f4735a;
+  --coral-light: #fce8e3;
+  --jade: #3db89c;
+  --jade-light: #e0f5ef;
+  --amber: #f0a500;
+  --amber-light: #fef3d0;
+  --lavender: #8b75c9;
+  --lavender-light: #ede8f8;
+  --ink: #1c1a18;
+  --ink-mid: #4a453f;
+  --ink-muted: #9a8f85;
+  --ink-faint: #e8e0d8;
+  --border: rgba(28,26,24,0.1);
+  --shadow-sm: 0 2px 8px rgba(28,26,24,0.08);
+  --shadow-md: 0 4px 20px rgba(28,26,24,0.12);
+  --shadow-lg: 0 8px 40px rgba(28,26,24,0.16);
+  --r-sm: 12px;
+  --r-md: 18px;
+  --r-lg: 24px;
+  --r-xl: 32px;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+
+html, body {
+  width: 100%; min-height: 100%;
+  background: var(--cream);
+  font-family: 'Lato', sans-serif;
+  color: var(--ink);
+  overscroll-behavior: none;
+}
+
+/* ── HEADER ── */
+.app-header {
+  position: sticky; top: 0; z-index: 100;
+  background: rgba(255,248,242,0.92);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--border);
+  padding: env(safe-area-inset-top, 0) 0 0;
+}
+.header-inner {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 20px;
+}
+.app-logo {
+  font-family: 'Playfair Display', serif;
+  font-size: 22px; font-weight: 700;
+  color: var(--ink);
+  letter-spacing: -0.5px;
+}
+.app-logo span {
+  font-style: italic;
+  color: var(--coral);
+}
+.header-badge {
+  font-family: 'DM Mono', monospace;
+  font-size: 10px; font-weight: 500;
+  letter-spacing: 2px;
+  background: var(--ink);
+  color: var(--cream);
+  padding: 4px 10px;
+  border-radius: 20px;
+  text-transform: uppercase;
+}
+
+/* ── VIEWFINDER ── */
+.viewfinder-wrap {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16/9;
+  background: #0e0c0a;
+  overflow: hidden;
+}
+#preview-canvas {
+  display: block; width: 100%; height: 100%; object-fit: cover;
+}
+#zebra-canvas {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  pointer-events: none; opacity: 0; transition: opacity 0.2s; z-index: 3;
+}
+#zebra-canvas.show { opacity: 1; }
+#live-video {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  object-fit: cover; display: none;
+}
+.ana-bar {
+  position: absolute; left: 0; right: 0;
+  background: #000; pointer-events: none;
+  height: 0; transition: height 0.35s cubic-bezier(.4,0,.2,1); z-index: 4;
+}
+.ana-bar.top { top: 0; }
+.ana-bar.bot { bottom: 0; }
+.ana-bar.show { height: 11.25%; }
+
+/* VF corners */
+.vf-corners { position: absolute; inset: 0; pointer-events: none; z-index: 5; }
+.vf-c { position: absolute; width: 22px; height: 22px; }
+.vf-c.tl { top: 14px; left: 14px; border-top: 2px solid rgba(255,255,255,0.6); border-left: 2px solid rgba(255,255,255,0.6); }
+.vf-c.tr { top: 14px; right: 14px; border-top: 2px solid rgba(255,255,255,0.6); border-right: 2px solid rgba(255,255,255,0.6); }
+.vf-c.bl { bottom: 14px; left: 14px; border-bottom: 2px solid rgba(255,255,255,0.6); border-left: 2px solid rgba(255,255,255,0.6); }
+.vf-c.br { bottom: 14px; right: 14px; border-bottom: 2px solid rgba(255,255,255,0.6); border-right: 2px solid rgba(255,255,255,0.6); }
+
+/* VF HUD overlays */
+.vf-hud { position: absolute; inset: 0; pointer-events: none; z-index: 6; }
+.hud-tl {
+  position: absolute; top: 14px; left: 14px;
+  display: flex; flex-direction: column; gap: 4px;
+}
+.hud-tr {
+  position: absolute; top: 14px; right: 14px;
+  display: flex; flex-direction: column; align-items: flex-end; gap: 4px;
+}
+.hud-bl {
+  position: absolute; bottom: 14px; left: 14px;
+}
+.hud-br {
+  position: absolute; bottom: 14px; right: 14px;
+}
+.hud-pill {
+  font-family: 'DM Mono', monospace;
+  font-size: 10px; font-weight: 500;
+  background: rgba(0,0,0,0.55);
+  color: #fff;
+  padding: 3px 8px;
+  border-radius: 20px;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+}
+.hud-pill.rec-pill {
+  background: rgba(220,60,50,0.85);
+  display: flex; align-items: center; gap: 5px;
+}
+.rec-blink {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: #fff;
+  animation: blink 1s infinite;
+}
+@keyframes blink { 0%,100%{opacity:1;} 50%{opacity:0.2;} }
+.hud-pill.zebra-active { background: rgba(240,165,0,0.85); color: #fff; }
+.hud-sim-badge {
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  background: rgba(0,0,0,0.45);
+  color: rgba(255,255,255,0.9);
+  padding: 3px 8px;
+  border-radius: 20px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+.timecode-disp {
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  color: rgba(255,255,255,0.6);
+  letter-spacing: 1px;
+}
+
+/* idle state */
+.idle-overlay {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 12px; background: #0e0c0a; z-index: 10; cursor: pointer;
+}
+.idle-icon {
+  width: 64px; height: 64px; border-radius: 50%;
+  border: 2px solid rgba(255,255,255,0.15);
+  display: flex; align-items: center; justify-content: center;
+}
+.idle-text {
+  font-family: 'DM Mono', monospace;
+  font-size: 11px; color: rgba(255,255,255,0.35);
+  letter-spacing: 2px; text-transform: uppercase; text-align: center;
+  line-height: 1.7;
+}
+.flash-ol {
+  position: absolute; inset: 0; background: #fff; opacity: 0;
+  pointer-events: none; z-index: 20;
+}
+@keyframes flash-go { 0%{opacity:0.9;} 100%{opacity:0;} }
+
+/* ── FILM SIM STRIP ── */
+.sim-strip {
+  display: flex; gap: 8px; overflow-x: auto; padding: 16px 20px;
+  scrollbar-width: none; -ms-overflow-style: none;
+  border-bottom: 1px solid var(--border);
+}
+.sim-strip::-webkit-scrollbar { display: none; }
+.sim-chip {
+  flex-shrink: 0;
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  cursor: pointer;
+}
+.sim-swatch {
+  width: 48px; height: 48px; border-radius: 14px;
+  border: 2.5px solid transparent;
+  transition: transform 0.15s, border-color 0.15s;
+  position: relative; overflow: hidden;
+}
+.sim-chip.active .sim-swatch {
+  border-color: var(--ink);
+  transform: scale(1.08);
+  box-shadow: var(--shadow-md);
+}
+.sim-name {
+  font-family: 'DM Mono', monospace;
+  font-size: 9px; font-weight: 500;
+  color: var(--ink-muted);
+  letter-spacing: 0.5px;
+  text-align: center;
+  white-space: nowrap;
+  transition: color 0.15s;
+}
+.sim-chip.active .sim-name { color: var(--ink); }
+
+/* swatch colors per sim */
+.sw-classic_chrome { background: linear-gradient(135deg, #b8b0a8 0%, #8a7e70 50%, #6a5e52 100%); }
+.sw-eterna { background: linear-gradient(135deg, #c4ccd8 0%, #8898b0 50%, #5a6a80 100%); }
+.sw-provia { background: linear-gradient(135deg, #f0e8d8 0%, #d4b890 50%, #b89060 100%); }
+.sw-moody_street { background: linear-gradient(135deg, #3a3630 0%, #5a5248 50%, #2a2620 100%); }
+.sw-nostalgic_neg { background: linear-gradient(135deg, #e8d4b0 0%, #c4a070 50%, #e07850 100%); }
+
+/* ── CONTROLS ── */
+.controls-section { padding: 20px; display: flex; flex-direction: column; gap: 16px; }
+
+.dial-row {
+  display: flex; gap: 10px; overflow-x: auto;
+  scrollbar-width: none; padding-bottom: 4px;
+}
+.dial-row::-webkit-scrollbar { display: none; }
+.dial-card {
+  flex-shrink: 0;
+  background: var(--warm-white);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: 12px 14px;
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+  cursor: pointer;
+  transition: all 0.15s;
+  min-width: 70px;
+  box-shadow: var(--shadow-sm);
+}
+.dial-card:active { transform: scale(0.96); box-shadow: none; }
+.dial-label {
+  font-family: 'DM Mono', monospace;
+  font-size: 9px; font-weight: 500;
+  color: var(--ink-muted);
+  letter-spacing: 2px; text-transform: uppercase;
+}
+.dial-knob {
+  width: 40px; height: 40px; border-radius: 50%;
+  background: var(--cream);
+  border: 1.5px solid var(--border);
+  position: relative;
+  transition: transform 0.2s cubic-bezier(.34,1.56,.64,1);
+}
+.dial-knob::after {
+  content: '';
+  position: absolute; top: 5px; left: 50%;
+  transform: translateX(-50%);
+  width: 3px; height: 9px;
+  border-radius: 2px;
+  background: var(--coral);
+}
+.dial-val {
+  font-family: 'DM Mono', monospace;
+  font-size: 11px; font-weight: 500;
+  color: var(--ink);
+}
+
+/* Mode selector */
+.mode-row {
+  display: flex; gap: 8px;
+}
+.mode-btn {
+  flex: 1;
+  display: flex; flex-direction: column; align-items: center; gap: 5px;
+  padding: 12px 8px;
+  border-radius: var(--r-md);
+  border: 1.5px solid var(--border);
+  background: var(--warm-white);
+  cursor: pointer;
+  transition: all 0.18s;
+  box-shadow: var(--shadow-sm);
+}
+.mode-btn.active-photo {
+  background: var(--coral-light);
+  border-color: var(--coral);
+}
+.mode-btn.active-video {
+  background: var(--jade-light);
+  border-color: var(--jade);
+}
+.mode-btn.active-live {
+  background: var(--lavender-light);
+  border-color: var(--lavender);
+}
+.mode-icon {
+  width: 28px; height: 28px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+}
+.mode-btn.active-photo .mode-icon { background: var(--coral); }
+.mode-btn.active-video .mode-icon { background: var(--jade); }
+.mode-btn.active-live .mode-icon { background: var(--lavender); }
+.mode-btn:not(.active-photo):not(.active-video):not(.active-live) .mode-icon {
+  background: var(--ink-faint);
+}
+.mode-label {
+  font-family: 'DM Mono', monospace;
+  font-size: 9px; font-weight: 500;
+  letter-spacing: 1.5px; text-transform: uppercase;
+  color: var(--ink-muted);
+  transition: color 0.18s;
+}
+.mode-btn.active-photo .mode-label { color: var(--coral); }
+.mode-btn.active-video .mode-label { color: var(--jade); }
+.mode-btn.active-live .mode-label { color: var(--lavender); }
+
+/* Overlay toggles */
+.overlay-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.ov-toggle {
+  display: flex; align-items: center; gap: 6px;
+  padding: 8px 12px;
+  border-radius: 30px;
+  border: 1.5px solid var(--border);
+  background: var(--warm-white);
+  cursor: pointer;
+  transition: all 0.15s;
+  font-family: 'DM Mono', monospace;
+  font-size: 10px; font-weight: 500;
+  color: var(--ink-muted);
+  letter-spacing: 0.5px;
+}
+.ov-toggle.on-zebra { background: var(--amber-light); border-color: var(--amber); color: #b07800; }
+.ov-toggle.on-ana { background: var(--ink); border-color: var(--ink); color: #fff; }
+.ov-toggle.on-tc { background: var(--jade-light); border-color: var(--jade); color: #1d7a66; }
+.ov-dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; opacity: 0.5; transition: opacity 0.15s; }
+.ov-toggle[class*="on-"] .ov-dot { opacity: 1; }
+
+/* Sliders */
+.sliders-card {
+  background: var(--warm-white);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: 18px;
+  box-shadow: var(--shadow-sm);
+}
+.sliders-title {
+  font-family: 'Playfair Display', serif;
+  font-size: 14px; font-style: italic;
+  color: var(--ink-muted);
+  margin-bottom: 14px;
+}
+.slider-row {
+  display: flex; align-items: center; gap: 12px;
+  margin-bottom: 12px;
+}
+.slider-row:last-child { margin-bottom: 0; }
+.sl-label {
+  font-family: 'DM Mono', monospace;
+  font-size: 9px; font-weight: 500;
+  color: var(--ink-muted); letter-spacing: 1px;
+  text-transform: uppercase;
+  min-width: 60px;
+}
+input[type=range].sl {
+  -webkit-appearance: none; flex: 1; height: 3px;
+  outline: none; border-radius: 2px; cursor: pointer;
+  transition: background 0.15s;
+}
+input[type=range].sl.coral { background: linear-gradient(to right, var(--coral) 0%, var(--coral) var(--pct, 50%), var(--ink-faint) var(--pct, 50%), var(--ink-faint) 100%); }
+input[type=range].sl.jade  { background: linear-gradient(to right, var(--jade) 0%, var(--jade) var(--pct, 50%), var(--ink-faint) var(--pct, 50%), var(--ink-faint) 100%); }
+input[type=range].sl.amber { background: linear-gradient(to right, var(--amber) 0%, var(--amber) var(--pct, 50%), var(--ink-faint) var(--pct, 50%), var(--ink-faint) 100%); }
+input[type=range].sl.lav   { background: linear-gradient(to right, var(--lavender) 0%, var(--lavender) var(--pct, 50%), var(--ink-faint) var(--pct, 50%), var(--ink-faint) 100%); }
+input[type=range].sl::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 18px; height: 18px;
+  border-radius: 50%; background: #fff;
+  border: 2.5px solid currentColor;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.15);
+}
+input[type=range].sl.coral::-webkit-slider-thumb { border-color: var(--coral); }
+input[type=range].sl.jade::-webkit-slider-thumb  { border-color: var(--jade); }
+input[type=range].sl.amber::-webkit-slider-thumb { border-color: var(--amber); }
+input[type=range].sl.lav::-webkit-slider-thumb   { border-color: var(--lavender); }
+.sl-val {
+  font-family: 'DM Mono', monospace;
+  font-size: 11px; font-weight: 500;
+  color: var(--ink); min-width: 24px; text-align: right;
+}
+
+/* ── ACTION BAR ── */
+.action-bar {
+  position: sticky; bottom: 0; z-index: 50;
+  background: rgba(255,248,242,0.95);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-top: 1px solid var(--border);
+  padding: 16px 20px;
+  padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  display: flex; align-items: center; justify-content: space-between; gap: 14px;
+}
+.shutter-btn {
+  width: 68px; height: 68px; border-radius: 50%;
+  background: var(--coral);
+  border: none; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 4px 16px rgba(244,115,90,0.45);
+  transition: transform 0.1s, box-shadow 0.1s;
+  flex-shrink: 0;
+  position: relative;
+}
+.shutter-btn:active { transform: scale(0.92); box-shadow: 0 2px 8px rgba(244,115,90,0.3); }
+.shutter-btn::after {
+  content: '';
+  width: 44px; height: 44px; border-radius: 50%;
+  background: rgba(255,255,255,0.25);
+  position: absolute;
+}
+.shutter-btn.video-mode { background: var(--jade); box-shadow: 0 4px 16px rgba(61,184,156,0.4); }
+.shutter-btn.live-mode  { background: var(--lavender); box-shadow: 0 4px 16px rgba(139,117,201,0.4); }
+.shutter-btn.recording  { background: #e0342a; animation: rec-pulse 1.2s infinite; }
+@keyframes rec-pulse { 0%,100%{box-shadow:0 4px 16px rgba(224,52,42,0.5);}50%{box-shadow:0 4px 28px rgba(224,52,42,0.8);} }
+
+.side-action {
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  cursor: pointer; flex: 1;
+}
+.side-icon {
+  width: 44px; height: 44px; border-radius: var(--r-sm);
+  background: var(--warm-white);
+  border: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: var(--shadow-sm);
+  transition: all 0.15s;
+}
+.side-icon:active { transform: scale(0.95); }
+.side-lbl {
+  font-family: 'DM Mono', monospace;
+  font-size: 9px; color: var(--ink-muted);
+  letter-spacing: 0.5px;
+}
+
+/* ── CLIPS PANEL ── */
+.clips-section {
+  padding: 0 20px 20px;
+  display: none;
+}
+.section-title {
+  font-family: 'Playfair Display', serif;
+  font-size: 18px; font-weight: 700; font-style: italic;
+  color: var(--ink);
+  margin-bottom: 12px;
+}
+.clip-card {
+  background: var(--warm-white);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: 12px;
+  display: flex; align-items: center; gap: 12px;
+  margin-bottom: 8px;
+  box-shadow: var(--shadow-sm);
+}
+.clip-thumb {
+  width: 56px; height: 36px;
+  border-radius: 8px; object-fit: cover;
+  background: var(--ink-faint); flex-shrink: 0;
+}
+.clip-info { flex: 1; min-width: 0; }
+.clip-name {
+  font-family: 'DM Mono', monospace;
+  font-size: 11px; font-weight: 500;
+  color: var(--ink);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.clip-meta {
+  font-family: 'DM Mono', monospace;
+  font-size: 9px; color: var(--ink-muted);
+  margin-top: 3px;
+}
+.clip-acts { display: flex; gap: 6px; }
+.clip-btn {
+  font-family: 'DM Mono', monospace;
+  font-size: 9px; font-weight: 500;
+  padding: 5px 10px; border-radius: 20px;
+  border: 1.5px solid var(--border);
+  background: transparent; cursor: pointer;
+  color: var(--ink-muted); transition: all 0.15s;
+}
+.clip-btn.save:hover { border-color: var(--jade); color: var(--jade); }
+.clip-btn.del:hover  { border-color: var(--coral); color: var(--coral); }
+.no-clips {
+  font-family: 'DM Mono', monospace;
+  font-size: 11px; color: var(--ink-muted);
+  text-align: center; padding: 20px 0;
+  letter-spacing: 1px;
+}
+
+/* ── HISTOGRAM ── */
+.histogram-bar { display: flex; align-items: flex-end; gap: 2px; height: 24px; }
+.histogram-bar span { width: 4px; border-radius: 2px; background: var(--ink-faint); transition: height 0.1s; }
+
+input[type=file] { display: none; }
+
+/* ── PAGE LOAD ANIMATION ── */
+.page-enter { animation: pageIn 0.5s cubic-bezier(.4,0,.2,1) both; }
+@keyframes pageIn { from{opacity:0;transform:translateY(12px);} to{opacity:1;transform:translateY(0);} }
+.stagger-1 { animation-delay: 0.05s; }
+.stagger-2 { animation-delay: 0.1s; }
+.stagger-3 { animation-delay: 0.15s; }
+.stagger-4 { animation-delay: 0.2s; }
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<header class="app-header page-enter">
+  <div class="header-inner">
+    <div class="app-logo">fuji<span>cam</span></div>
+    <div style="display:flex;align-items:center;gap:10px;">
+      <div class="histogram-bar" id="histogram"></div>
+      <div class="header-badge" id="mode-badge">photo</div>
+    </div>
+  </div>
+</header>
+
+<!-- VIEWFINDER -->
+<div class="viewfinder-wrap page-enter stagger-1">
+  <canvas id="preview-canvas"></canvas>
+  <canvas id="zebra-canvas"></canvas>
+  <video id="live-video" autoplay muted playsinline></video>
+  <div class="ana-bar top" id="bar-top"></div>
+  <div class="ana-bar bot" id="bar-bot"></div>
+
+  <div class="vf-corners">
+    <div class="vf-c tl"></div>
+    <div class="vf-c tr"></div>
+    <div class="vf-c bl"></div>
+    <div class="vf-c br"></div>
+  </div>
+
+  <div class="vf-hud">
+    <div class="hud-tl">
+      <div class="hud-sim-badge" id="hud-sim">Classic Chrome</div>
+    </div>
+    <div class="hud-tr" id="hud-tr">
+      <div class="hud-pill" id="meta-pill">F2.8 · 1/125 · ISO400</div>
+    </div>
+    <div class="hud-bl">
+      <div class="hud-pill rec-pill" id="rec-hud" style="display:none;">
+        <div class="rec-blink"></div>
+        <span id="rec-time">00:00:00</span>
+      </div>
+    </div>
+    <div class="hud-br">
+      <div class="hud-pill zebra-active" id="zebra-warn" style="display:none;">ZEBRA</div>
+      <div class="timecode-disp" id="timecode" style="display:none;">00:00:00:00</div>
+    </div>
+  </div>
+
+  <div class="idle-overlay" id="idle-overlay" onclick="handleIdleClick()">
+    <div class="idle-icon">
+      <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+        <circle cx="14" cy="14" r="9" stroke="rgba(255,255,255,0.4)" stroke-width="1.5"/>
+        <circle cx="14" cy="14" r="5" fill="rgba(255,255,255,0.2)"/>
+        <path d="M5 8l3-3 1.5 2" stroke="rgba(255,255,255,0.3)" stroke-width="1.5" stroke-linecap="round"/>
+      </svg>
+    </div>
+    <div class="idle-text" id="idle-text">Tap to open camera<br>or load a photo</div>
+  </div>
+  <div class="flash-ol" id="flash-ol"></div>
+</div>
+
+<!-- FILM SIM STRIP -->
+<div class="sim-strip page-enter stagger-2">
+  <div class="sim-chip active" data-sim="classic_chrome" onclick="selectSim('classic_chrome',this)">
+    <div class="sim-swatch sw-classic_chrome"></div>
+    <div class="sim-name">Chrome</div>
+  </div>
+  <div class="sim-chip" data-sim="eterna" onclick="selectSim('eterna',this)">
+    <div class="sim-swatch sw-eterna"></div>
+    <div class="sim-name">Eterna</div>
+  </div>
+  <div class="sim-chip" data-sim="provia" onclick="selectSim('provia',this)">
+    <div class="sim-swatch sw-provia"></div>
+    <div class="sim-name">Provia</div>
+  </div>
+  <div class="sim-chip" data-sim="moody_street" onclick="selectSim('moody_street',this)">
+    <div class="sim-swatch sw-moody_street"></div>
+    <div class="sim-name">Moody</div>
+  </div>
+  <div class="sim-chip" data-sim="nostalgic_neg" onclick="selectSim('nostalgic_neg',this)">
+    <div class="sim-swatch sw-nostalgic_neg"></div>
+    <div class="sim-name">Nostalgic</div>
+  </div>
+</div>
+
+<!-- CONTROLS -->
+<div class="controls-section page-enter stagger-3">
+
+  <!-- Dial row -->
+  <div class="dial-row">
+    <div class="dial-card" onclick="cycleDial('iso')">
+      <div class="dial-label">ISO</div>
+      <div class="dial-knob" id="dk-iso"></div>
+      <div class="dial-val" id="dv-iso">400</div>
+    </div>
+    <div class="dial-card" onclick="cycleDial('ss')">
+      <div class="dial-label">Speed</div>
+      <div class="dial-knob" id="dk-ss"></div>
+      <div class="dial-val" id="dv-ss">1/125</div>
+    </div>
+    <div class="dial-card" onclick="cycleDial('exp')">
+      <div class="dial-label">Exp</div>
+      <div class="dial-knob" id="dk-exp"></div>
+      <div class="dial-val" id="dv-exp">±0</div>
+    </div>
+    <div class="dial-card" onclick="cycleDial('wb')">
+      <div class="dial-label">WB</div>
+      <div class="dial-knob" id="dk-wb"></div>
+      <div class="dial-val" id="dv-wb">Auto</div>
+    </div>
+  </div>
+
+  <!-- Mode selector -->
+  <div class="mode-row">
+    <div class="mode-btn active-photo" id="mb-photo" onclick="setMode('photo')">
+      <div class="mode-icon">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+          <rect x="1" y="3" width="12" height="9" rx="2" stroke="#fff" stroke-width="1.5"/>
+          <circle cx="7" cy="7.5" r="2" stroke="#fff" stroke-width="1.5"/>
+          <path d="M4.5 3V2.5a.5.5 0 01.5-.5h4a.5.5 0 01.5.5V3" stroke="#fff" stroke-width="1.5"/>
+        </svg>
+      </div>
+      <div class="mode-label">Photo</div>
+    </div>
+    <div class="mode-btn" id="mb-video" onclick="setMode('video')">
+      <div class="mode-icon">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+          <rect x="1" y="3" width="8" height="8" rx="1.5" stroke="#888" stroke-width="1.5"/>
+          <path d="M9 5.5l4-2v7l-4-2" stroke="#888" stroke-width="1.5" stroke-linejoin="round"/>
+        </svg>
+      </div>
+      <div class="mode-label">Video</div>
+    </div>
+    <div class="mode-btn" id="mb-live" onclick="setMode('live')">
+      <div class="mode-icon">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+          <circle cx="7" cy="7" r="2.5" stroke="#888" stroke-width="1.5"/>
+          <path d="M3 7a4 4 0 004 4m0-8a4 4 0 014 4" stroke="#888" stroke-width="1.5" stroke-linecap="round"/>
+          <path d="M1 7a6 6 0 006 6m0-12a6 6 0 016 6" stroke="#888" stroke-width="1.2" stroke-linecap="round"/>
+        </svg>
+      </div>
+      <div class="mode-label">Live</div>
+    </div>
+  </div>
+
+  <!-- Overlay toggles -->
+  <div class="overlay-row">
+    <div class="ov-toggle" id="ov-zebra" onclick="toggleOverlay('zebra')">
+      <div class="ov-dot"></div>Zebra
+    </div>
+    <div class="ov-toggle" id="ov-ana" onclick="toggleOverlay('ana')">
+      <div class="ov-dot"></div>2.39:1
+    </div>
+    <div class="ov-toggle" id="ov-tc" onclick="toggleOverlay('tc')">
+      <div class="ov-dot"></div>Timecode
+    </div>
+    <div class="ov-toggle" id="ov-flip" onclick="flipCamera()" style="display:none;">
+      <div class="ov-dot"></div>Flip
+    </div>
+  </div>
+
+  <!-- Sliders -->
+  <div class="sliders-card">
+    <div class="sliders-title">Film controls</div>
+    <div class="slider-row">
+      <div class="sl-label">Grain</div>
+      <input type="range" class="sl coral" id="sl-grain" min="0" max="10" value="3" step="1" oninput="updateSlider('grain',this)">
+      <div class="sl-val" id="sv-grain">3</div>
+    </div>
+    <div class="slider-row">
+      <div class="sl-label">Highlight</div>
+      <input type="range" class="sl jade" id="sl-highlight" min="-4" max="4" value="0" step="1" oninput="updateSlider('highlight',this)">
+      <div class="sl-val" id="sv-highlight">0</div>
+    </div>
+    <div class="slider-row">
+      <div class="sl-label">Shadow</div>
+      <input type="range" class="sl jade" id="sl-shadow" min="-4" max="4" value="0" step="1" oninput="updateSlider('shadow',this)">
+      <div class="sl-val" id="sv-shadow">0</div>
+    </div>
+    <div class="slider-row">
+      <div class="sl-label">Color</div>
+      <input type="range" class="sl lav" id="sl-color" min="-4" max="4" value="0" step="1" oninput="updateSlider('color',this)">
+      <div class="sl-val" id="sv-color">0</div>
+    </div>
+    <div class="slider-row">
+      <div class="sl-label">Zebra %</div>
+      <input type="range" class="sl amber" id="sl-zebra" min="70" max="100" value="85" step="1" oninput="updateSlider('zebra',this)">
+      <div class="sl-val" id="sv-zebra">85</div>
+    </div>
+    <div class="slider-row">
+      <div class="sl-label">Vignette</div>
+      <input type="range" class="sl coral" id="sl-vignette" min="0" max="10" value="3" step="1" oninput="updateSlider('vignette',this)">
+      <div class="sl-val" id="sv-vignette">3</div>
+    </div>
+  </div>
+
+</div>
+
+<!-- CLIPS -->
+<div class="clips-section" id="clips-section">
+  <div class="section-title">Clips</div>
+  <div id="clips-list"><div class="no-clips">No clips recorded yet</div></div>
+</div>
+
+<!-- ACTION BAR -->
+<div class="action-bar page-enter stagger-4">
+  <div class="side-action" onclick="handleGallery()">
+    <div class="side-icon" id="gallery-icon">
+      <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+        <rect x="2" y="2" width="16" height="16" rx="3" stroke="#4a453f" stroke-width="1.5"/>
+        <circle cx="7" cy="7" r="1.5" fill="#4a453f"/>
+        <path d="M2 14l5-4 3 3 3-3 5 4" stroke="#4a453f" stroke-width="1.5" stroke-linejoin="round"/>
+      </svg>
+    </div>
+    <div class="side-lbl">Gallery</div>
+  </div>
+
+  <button class="shutter-btn" id="shutter-btn" onclick="triggerShutter()">
+  </button>
+
+  <div class="side-action" onclick="saveOutput()">
+    <div class="side-icon">
+      <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+        <path d="M10 3v10M6 9l4 4 4-4" stroke="#4a453f" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M3 16h14" stroke="#4a453f" stroke-width="1.5" stroke-linecap="round"/>
+      </svg>
+    </div>
+    <div class="side-lbl">Save</div>
+  </div>
+</div>
+
+<input type="file" id="file-input" accept="image/*,video/*" onchange="loadMedia(this)">
+
+<script>
+const SIMS = {
+  classic_chrome: { name:'Classic Chrome', brightness:-5, contrast:20, saturation:-20, r:1.0, g:0.95, b:0.88, shadows:[0.08,0.05,0.04], midTint:[0,-0.02,-0.04], grain:3, vignette:3 },
+  eterna:         { name:'Eterna Cinema',  brightness:-8, contrast:-10, saturation:-30, r:0.92, g:0.93, b:1.0,  shadows:[0.03,0.04,0.07], midTint:[-0.02,-0.01,0.03], grain:2, vignette:2 },
+  provia:         { name:'Provia',         brightness:2,  contrast:15,  saturation:10,  r:1.0,  g:0.99, b:0.97, shadows:[0.02,0.02,0.02], midTint:[0,0,0],            grain:1, vignette:2 },
+  moody_street:   { name:'Moody Street',   brightness:-12,contrast:35,  saturation:-45, r:0.9,  g:0.9,  b:0.92, shadows:[0.06,0.05,0.06], midTint:[-0.02,-0.02,0.02], grain:5, vignette:5 },
+  nostalgic_neg:  { name:'Nostalgic Neg',  brightness:-3, contrast:5,   saturation:-10, r:1.02, g:0.94, b:0.82, shadows:[0.10,0.07,0.04], midTint:[0.03,-0.01,-0.04],  grain:4, vignette:4, liftR:0.04, liftG:0.025, liftB:0.01, hueShiftCyan:-0.06, fadeBlacks:0.08 }
+};
+const DIALS = {
+  iso: ['100','200','400','800','1600','3200','6400'],
+  ss:  ['1/30','1/60','1/125','1/250','1/500','1/1000','1/2000'],
+  exp: ['-2','-1.5','-1','-0.5','±0','+0.5','+1','+1.5','+2'],
+  wb:  ['Auto','3000K','4000K','5500K','6500K','7500K']
+};
+const dialIdx = {iso:2,ss:2,exp:4,wb:0}, dialRot = {iso:0,ss:0,exp:0,wb:0};
+let currentSim = 'classic_chrome';
+let ctrl = {grain:3,highlight:0,shadow:0,color:0,zebra:85,vignette:3};
+let sourceImage = null, sourceVideo = null;
+let camMode = 'photo';
+let liveStream = null, liveAnimId = null, vidAnimId = null;
+let isRecording = false, mediaRecorder = null, recordedChunks = [], recStart = null, recInt = null;
+let tcInt = null, tcF=0, tcS=0, tcM=0, tcH=0;
+let overlays = {zebra:false,ana:false,tc:false};
+let clips = [];
+let facingMode = 'environment';
+
+function cycleDial(n) {
+  dialIdx[n] = (dialIdx[n]+1) % DIALS[n].length;
+  dialRot[n] += 45;
+  document.getElementById('dk-'+n).style.transform = 'rotate('+dialRot[n]+'deg)';
+  document.getElementById('dv-'+n).textContent = DIALS[n][dialIdx[n]];
+  updateMetaPill();
+}
+function updateMetaPill() {
+  document.getElementById('meta-pill').textContent = 'F2.8 · '+DIALS.ss[dialIdx.ss]+' · ISO'+DIALS.iso[dialIdx.iso];
+}
+
+function updateSlider(name, el) {
+  const val = parseInt(el.value);
+  ctrl[name] = val;
+  document.getElementById('sv-'+name).textContent = val;
+  const min = parseFloat(el.min), max = parseFloat(el.max);
+  const pct = Math.round(((val-min)/(max-min))*100)+'%';
+  el.style.setProperty('--pct', pct);
+  if (sourceImage && !sourceVideo) renderFromSource();
+}
+
+function initSliders() {
+  document.querySelectorAll('input[type=range].sl').forEach(el => {
+    const min = parseFloat(el.min), max = parseFloat(el.max), val = parseFloat(el.value);
+    const pct = Math.round(((val-min)/(max-min))*100)+'%';
+    el.style.setProperty('--pct', pct);
+  });
+}
+
+function toggleOverlay(k) {
+  overlays[k] = !overlays[k];
+  const el = document.getElementById('ov-'+k);
+  el.className = 'ov-toggle' + (overlays[k] ? ' on-'+k : '');
+  if (k==='ana') { document.getElementById('bar-top').classList.toggle('show',overlays.ana); document.getElementById('bar-bot').classList.toggle('show',overlays.ana); }
+  if (k==='tc')  { document.getElementById('timecode').style.display = overlays.tc ? 'block':'none'; }
+  if (k==='zebra') {
+    document.getElementById('zebra-canvas').classList.toggle('show', overlays.zebra);
+    if (!overlays.zebra) { clearZebra(); document.getElementById('zebra-warn').style.display='none'; }
+  }
+}
+
+function clearZebra() { const zc=document.getElementById('zebra-canvas'); zc.getContext('2d').clearRect(0,0,zc.width,zc.height); }
+
+function drawZebra(src) {
+  if (!overlays.zebra) return;
+  const zc = document.getElementById('zebra-canvas');
+  zc.width = src.width; zc.height = src.height;
+  const sctx = src.getContext('2d'), zctx = zc.getContext('2d');
+  const d = sctx.getImageData(0,0,src.width,src.height).data;
+  const thresh = (ctrl.zebra/100)*255;
+  const out = zctx.createImageData(src.width,src.height);
+  const od = out.data;
+  let any = false;
+  for (let y=0;y<src.height;y++) for (let x=0;x<src.width;x++) {
+    const i=(y*src.width+x)*4;
+    const lum=d[i]*0.299+d[i+1]*0.587+d[i+2]*0.114;
+    if (lum>=thresh) { any=true; const s=Math.floor((x+y)/6)%2===0; od[i]=s?230:0;od[i+1]=s?140:0;od[i+2]=0;od[i+3]=s?200:0; }
+  }
+  zctx.putImageData(out,0,0);
+  const w = document.getElementById('zebra-warn');
+  w.style.display = any ? 'block':'none';
+}
+
+function setMode(m) {
+  camMode = m;
+  const modes = ['photo','video','live'];
+  modes.forEach(x => {
+    const btn = document.getElementById('mb-'+x);
+    btn.className = 'mode-btn' + (x===m ? ' active-'+x : '');
+    const iconPaths = btn.querySelectorAll('svg [stroke]');
+    iconPaths.forEach(p => { if (!btn.classList.contains('active-'+x)) p.setAttribute('stroke','#888'); });
+  });
+  document.getElementById('mode-badge').textContent = m;
+  const clipsSec = document.getElementById('clips-section');
+  const flipBtn = document.getElementById('ov-flip');
+  const sb = document.getElementById('shutter-btn');
+  sb.className = 'shutter-btn' + (m==='video'?' video-mode':m==='live'?' live-mode':'');
+  if (m==='photo')  { clipsSec.style.display='none';  flipBtn.style.display='none';  stopLive(); }
+  if (m==='video')  { clipsSec.style.display='block'; flipBtn.style.display='none';  stopLive(); }
+  if (m==='live')   { clipsSec.style.display='block'; flipBtn.style.display='flex';  startLive(); }
+}
+
+function handleIdleClick() {
+  if (camMode==='live') startLive();
+  else document.getElementById('file-input').click();
+}
+function handleGallery() { document.getElementById('file-input').click(); }
+
+function startLive() {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { alert('Camera API not available. Please use HTTPS.'); return; }
+  if (liveStream) { liveStream.getTracks().forEach(t=>t.stop()); }
+  navigator.mediaDevices.getUserMedia({video:{facingMode,width:{ideal:1920},height:{ideal:1080}},audio:true})
+    .then(stream => {
+      liveStream = stream;
+      const lv = document.getElementById('live-video');
+      lv.srcObject = stream; lv.style.display='block';
+      document.getElementById('idle-overlay').style.display = 'none';
+      lv.onloadedmetadata = () => { lv.play(); startLiveRender(); };
+    })
+    .catch(err => { console.warn(err); alert('Camera permission denied or unavailable.\n\nTip: this app must be served over HTTPS for camera access.'); });
+}
+
+function stopLive() {
+  if (liveStream) { liveStream.getTracks().forEach(t=>t.stop()); liveStream=null; }
+  if (liveAnimId) { cancelAnimationFrame(liveAnimId); liveAnimId=null; }
+  document.getElementById('live-video').style.display='none';
+  stopRecord();
+  if (tcInt) { clearInterval(tcInt); tcInt=null; }
+}
+
+function flipCamera() {
+  facingMode = facingMode==='environment' ? 'user':'environment';
+  if (camMode==='live') startLive();
+}
+
+function startLiveRender() {
+  const lv = document.getElementById('live-video');
+  const canvas = document.getElementById('preview-canvas');
+  const wrap = document.getElementById('viewfinder-wrap') || canvas.parentElement;
+  canvas.width  = wrap.clientWidth  * (window.devicePixelRatio||1);
+  canvas.height = Math.round(canvas.width * 9/16);
+  function tick() {
+    if (!liveStream) return;
+    canvas.getContext('2d').drawImage(lv,0,0,canvas.width,canvas.height);
+    applyFilters(canvas); drawZebra(canvas); buildHistogram();
+    liveAnimId = requestAnimationFrame(tick);
+  }
+  tick(); startTimecode();
+}
+
+function startTimecode() {
+  if (tcInt) clearInterval(tcInt);
+  tcF=0;tcS=0;tcM=0;tcH=0;
+  tcInt = setInterval(()=>{
+    tcF++; if(tcF>=24){tcF=0;tcS++;} if(tcS>=60){tcS=0;tcM++;} if(tcM>=60){tcM=0;tcH++;}
+    const p=n=>String(n).padStart(2,'0');
+    document.getElementById('timecode').textContent=p(tcH)+':'+p(tcM)+':'+p(tcS)+':'+p(tcF);
+  },1000/24);
+}
+
+function triggerShutter() {
+  if (camMode==='live' && isRecording) { stopRecord(); return; }
+  if (camMode==='live' && liveStream)  { if(!isRecording) startRecord(); return; }
+  if (camMode==='video' && sourceVideo) { if(!isRecording) startRecord(); else stopRecord(); return; }
+  const fl = document.getElementById('flash-ol');
+  fl.style.animation='none'; void fl.offsetWidth; fl.style.animation='flash-go 0.3s ease-out forwards';
+  if (sourceImage||sourceVideo) renderFromSource();
+}
+
+function startRecord() {
+  let stream;
+  if (camMode==='live' && liveStream) {
+    const cs = document.getElementById('preview-canvas').captureStream(30);
+    liveStream.getAudioTracks().forEach(t=>cs.addTrack(t));
+    stream = cs;
+  } else if (sourceVideo) {
+    stream = document.getElementById('preview-canvas').captureStream(30);
+    sourceVideo.play();
+  } else { alert('Load a video or use Live mode.'); return; }
+  recordedChunks = [];
+  const mime = MediaRecorder.isTypeSupported('video/webm;codecs=vp9') ? 'video/webm;codecs=vp9':'video/webm';
+  mediaRecorder = new MediaRecorder(stream,{mimeType:mime});
+  mediaRecorder.ondataavailable = e => { if(e.data.size>0) recordedChunks.push(e.data); };
+  mediaRecorder.onstop = finalizeClip;
+  mediaRecorder.start(100);
+  isRecording = true; recStart = Date.now();
+  document.getElementById('rec-hud').style.display = 'flex';
+  document.getElementById('shutter-btn').classList.add('recording');
+  recInt = setInterval(()=>{
+    const e=Math.floor((Date.now()-recStart)/1000);
+    const p=n=>String(n).padStart(2,'0');
+    document.getElementById('rec-time').textContent=p(Math.floor(e/3600))+':'+p(Math.floor((e%3600)/60))+':'+p(e%60);
+  },500);
+}
+
+function stopRecord() {
+  if (!isRecording) return;
+  isRecording = false;
+  if (mediaRecorder && mediaRecorder.state!=='inactive') mediaRecorder.stop();
+  clearInterval(recInt);
+  document.getElementById('rec-hud').style.display = 'none';
+  document.getElementById('shutter-btn').classList.remove('recording');
+  const m = camMode;
+  document.getElementById('shutter-btn').className = 'shutter-btn' + (m==='video'?' video-mode':m==='live'?' live-mode':'');
+}
+
+function finalizeClip() {
+  const blob = new Blob(recordedChunks,{type:'video/webm'});
+  const url = URL.createObjectURL(blob);
+  const dur = Math.round((Date.now()-recStart)/1000);
+  const p=n=>String(n).padStart(2,'0');
+  const canvas = document.getElementById('preview-canvas');
+  clips.push({url,dur:p(Math.floor(dur/60))+':'+p(dur%60),name:'Clip '+(clips.length+1),sim:SIMS[currentSim].name,thumb:canvas.toDataURL('image/jpeg',0.4)});
+  renderClips();
+}
+
+function renderClips() {
+  const el = document.getElementById('clips-list');
+  if (!clips.length) { el.innerHTML='<div class="no-clips">No clips recorded yet</div>'; return; }
+  el.innerHTML = clips.map((c,i)=>`
+    <div class="clip-card">
+      <img class="clip-thumb" src="${c.thumb}">
+      <div class="clip-info">
+        <div class="clip-name">${c.name} · ${c.sim}</div>
+        <div class="clip-meta">${c.dur} · WebM</div>
+      </div>
+      <div class="clip-acts">
+        <button class="clip-btn save" onclick="downloadClip(${i})">Save</button>
+        <button class="clip-btn del" onclick="deleteClip(${i})">Del</button>
+      </div>
+    </div>`).join('');
+}
+
+function downloadClip(i) {
+  const a=document.createElement('a'); a.href=clips[i].url;
+  a.download='fuji_'+clips[i].name.replace(' ','_')+'_'+currentSim+'.webm'; a.click();
+}
+function deleteClip(i) { URL.revokeObjectURL(clips[i].url); clips.splice(i,1); renderClips(); }
+
+function loadMedia(input) {
+  const file=input.files[0]; if(!file) return;
+  if (file.type.startsWith('image/')) {
+    const reader=new FileReader();
+    reader.onload=e=>{
+      const img=new Image();
+      img.onload=()=>{sourceImage=img;sourceVideo=null;if(vidAnimId){cancelAnimationFrame(vidAnimId);vidAnimId=null;}document.getElementById('idle-overlay').style.display='none';renderFromSource();};
+      img.src=e.target.result;
+    };
+    reader.readAsDataURL(file);
+  } else if (file.type.startsWith('video/')) {
+    sourceImage=null;
+    const url=URL.createObjectURL(file);
+    const vid=document.createElement('video');
+    vid.src=url;vid.loop=true;vid.muted=true;vid.playsInline=true;
+    vid.onloadeddata=()=>{sourceVideo=vid;document.getElementById('idle-overlay').style.display='none';if(camMode==='photo')setMode('video');startVideoRender(vid);};
+    vid.load();
+  }
+}
+
+function startVideoRender(vid) {
+  vid.play();
+  if (vidAnimId) cancelAnimationFrame(vidAnimId);
+  const canvas=document.getElementById('preview-canvas'), wrap=canvas.parentElement;
+  canvas.width=wrap.clientWidth*(window.devicePixelRatio||1);
+  canvas.height=Math.round(canvas.width*9/16);
+  function tick(){if(!sourceVideo)return;canvas.getContext('2d').drawImage(vid,0,0,canvas.width,canvas.height);applyFilters(canvas);drawZebra(canvas);buildHistogram();vidAnimId=requestAnimationFrame(tick);}
+  tick(); startTimecode();
+}
+
+function renderFromSource() {
+  if (sourceVideo) { startVideoRender(sourceVideo); return; }
+  if (!sourceImage) return;
+  const canvas=document.getElementById('preview-canvas'), wrap=canvas.parentElement;
+  canvas.width=wrap.clientWidth*(window.devicePixelRatio||1);
+  canvas.height=Math.round(canvas.width*9/16);
+  const ctx=canvas.getContext('2d');
+  const ar=sourceImage.width/sourceImage.height, car=canvas.width/canvas.height;
+  let sx=0,sy=0,sw=sourceImage.width,sh=sourceImage.height;
+  if(ar>car){sw=sourceImage.height*car;sx=(sourceImage.width-sw)/2;}
+  else{sh=sourceImage.width/car;sy=(sourceImage.height-sh)/2;}
+  ctx.drawImage(sourceImage,sx,sy,sw,sh,0,0,canvas.width,canvas.height);
+  applyFilters(canvas); drawZebra(canvas); buildHistogram();
+}
+
+function applyFilters(canvas) {
+  const sim=SIMS[currentSim], ctx=canvas.getContext('2d'), cw=canvas.width, ch=canvas.height;
+  const id=ctx.getImageData(0,0,cw,ch), d=id.data;
+  const grainAmt=(ctrl.grain+(sim.grain||0))/2;
+  const hlS=ctrl.highlight*8, shS=ctrl.shadow*8;
+  const ba=sim.brightness/100, ca=1+sim.contrast/100;
+  const sa=1+(sim.saturation+ctrl.color*10)/100;
+  const fade=sim.fadeBlacks||0, lR=sim.liftR||0, lG=sim.liftG||0, lB=sim.liftB||0;
+  for(let i=0;i<d.length;i+=4){
+    let r=d[i]/255,g=d[i+1]/255,b=d[i+2]/255;
+    r=(r-0.5)*ca+0.5+ba; g=(g-0.5)*ca+0.5+ba; b=(b-0.5)*ca+0.5+ba;
+    const lum=0.299*r+0.587*g+0.114*b;
+    r=lum+(r-lum)*sa; g=lum+(g-lum)*sa; b=lum+(b-lum)*sa;
+    const sm=Math.max(0,1-lum*3), hm=Math.max(0,lum*2-1);
+    r+=sim.shadows[0]*sm+sim.midTint[0]; g+=sim.shadows[1]*sm+sim.midTint[1]; b+=sim.shadows[2]*sm+sim.midTint[2];
+    r+=hm*hlS/255; g+=hm*hlS/255; b+=hm*hlS/255;
+    r+=sm*shS/255;  g+=sm*shS/255;  b+=sm*shS/255;
+    r*=sim.r; g*=sim.g; b*=sim.b;
+    if(fade>0){r=r*(1-fade)+fade;g=g*(1-fade)+fade;b=b*(1-fade)+fade;}
+    if(lR||lG||lB){r+=lR*sm;g+=lG*sm;b+=lB*sm;}
+    if(sim.hueShiftCyan){const cy=Math.max(0,Math.min(g,b)-r);g+=sim.hueShiftCyan*cy*0.5;b+=sim.hueShiftCyan*cy*0.3;}
+    if(grainAmt>0){const gr=(Math.random()-0.5)*grainAmt*0.025;r+=gr;g+=gr*0.9;b+=gr*0.8;}
+    d[i]=Math.max(0,Math.min(255,Math.round(r*255)));
+    d[i+1]=Math.max(0,Math.min(255,Math.round(g*255)));
+    d[i+2]=Math.max(0,Math.min(255,Math.round(b*255)));
+  }
+  ctx.putImageData(id,0,0);
+  const vig=ctrl.vignette;
+  if(vig>0){const vs=vig/10*0.85;const gr=ctx.createRadialGradient(cw/2,ch/2,Math.min(cw,ch)*0.3,cw/2,ch/2,Math.max(cw,ch)*0.75);gr.addColorStop(0,'rgba(0,0,0,0)');gr.addColorStop(1,`rgba(0,0,0,${vs})`);ctx.fillStyle=gr;ctx.fillRect(0,0,cw,ch);}
+}
+
+function buildHistogram() {
+  const canvas=document.getElementById('preview-canvas');
+  if(!sourceImage&&!sourceVideo&&!liveStream)return;
+  const d=canvas.getContext('2d').getImageData(0,0,canvas.width,canvas.height).data;
+  const b=new Array(14).fill(0);
+  for(let i=0;i<d.length;i+=20){b[Math.min(13,Math.round((d[i]*0.299+d[i+1]*0.587+d[i+2]*0.114)/255*13))]++;}
+  const mx=Math.max(...b);
+  document.getElementById('histogram').innerHTML=b.map(v=>`<span style="height:${Math.max(2,Math.round((v/mx)*22))}px"></span>`).join('');
+}
+
+function selectSim(k, el) {
+  currentSim = k;
+  document.querySelectorAll('.sim-chip').forEach(c=>c.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById('hud-sim').textContent = SIMS[k].name;
+  const sim=SIMS[k];
+  const grainEl=document.getElementById('sl-grain'); grainEl.value=sim.grain; updateSlider('grain',grainEl);
+  const vigEl=document.getElementById('sl-vignette'); vigEl.value=sim.vignette; updateSlider('vignette',vigEl);
+  document.getElementById('sv-grain').textContent=sim.grain;
+  document.getElementById('sv-vignette').textContent=sim.vignette;
+  if(sourceImage&&!sourceVideo)renderFromSource();
+}
+
+function saveOutput() {
+  const canvas=document.getElementById('preview-canvas');
+  if(!sourceImage&&!sourceVideo&&!liveStream){alert('Nothing to save yet.');return;}
+  const link=document.createElement('a');
+  link.download='fujicam_'+currentSim+(sourceVideo?'_frame':'')+'.jpg';
+  link.href=canvas.toDataURL('image/jpeg',0.93); link.click();
+}
+
+// init
+initSliders(); updateMetaPill();
+</script>
+</body>
+</html>
