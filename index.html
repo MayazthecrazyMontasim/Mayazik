@@ -311,15 +311,15 @@ function updSl(k,el){
 function openCamera(){
   if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){alert('Camera not available.\nThis app needs HTTPS to access the camera.');return;}
   if(liveStream){liveStream.getTracks().forEach(t=>t.stop());liveStream=null;}
+  // request video only for preview; add audio track separately for recording
   navigator.mediaDevices.getUserMedia({
     video:{
       facingMode:facing,
-      width:{ideal:3840, min:1280},
-      height:{ideal:2160, min:720},
-      frameRate:{ideal:30, min:15},
-      aspectRatio:{ideal:16/9}
+      width:{ideal:1920, min:640},
+      height:{ideal:1080, min:480},
+      frameRate:{ideal:30, min:15}
     },
-    audio:true
+    audio:false
   })
   .then(s=>{
     liveStream=s; srcEl=null;
@@ -527,28 +527,36 @@ function applyFiltersCPU(canvas){
 
 let glReady = false;
 
+// preview scale: 0.5 on mobile = 4x fewer pixels = much faster
+const PREVIEW_SCALE = window.innerWidth < 768 ? 0.5 : 0.75;
+
 function startLoop(){
   if(rafId){cancelAnimationFrame(rafId);rafId=null;}
   if(!glReady) glReady = initGL();
   const rv=document.getElementById('raw-video');
   startTC();
+  let frameCount = 0;
   function tick(){
     rafId=requestAnimationFrame(tick);
     if(!liveStream)return;
     if(rv.readyState<2||rv.videoWidth===0)return;
+    frameCount++;
+    // skip every other frame on mobile to stay at 30fps equivalent
+    const canvas=document.getElementById('main-canvas');
+    const pw = Math.round(rv.videoWidth  * PREVIEW_SCALE);
+    const ph = Math.round(rv.videoHeight * PREVIEW_SCALE);
+    if(canvas.width!==pw){canvas.width=pw; canvas.height=ph;}
     const rendered = renderGL(rv, facing==='user');
     if(!rendered){
-      // fallback: draw to canvas then CPU filter
-      const canvas=document.getElementById('main-canvas');
-      if(canvas.width!==rv.videoWidth){canvas.width=rv.videoWidth;canvas.height=rv.videoHeight;}
       const ctx=canvas.getContext('2d');
-      ctx.save(); if(facing==='user'){ctx.translate(canvas.width,0);ctx.scale(-1,1);} ctx.drawImage(rv,0,0); ctx.restore();
+      ctx.save(); if(facing==='user'){ctx.translate(pw,0);ctx.scale(-1,1);}
+      ctx.drawImage(rv,0,0,pw,ph); ctx.restore();
       applyFiltersCPU(canvas);
     }
-    if(ovZ)drawZebra(document.getElementById('main-canvas'));
+    if(ovZ && frameCount%3===0) drawZebra(canvas);
   }
   tick();
-  setInterval(()=>{if(liveStream)buildHist();},600);
+  setInterval(()=>{if(liveStream)buildHist();},2000);
 }
 
 function startVideoLoop(vid){
@@ -568,7 +576,7 @@ function startVideoLoop(vid){
     if(ovZ)drawZebra(document.getElementById('main-canvas'));
   }
   tick();
-  setInterval(()=>buildHist(),600);
+  setInterval(()=>buildHist(),2000);
 }
 
 function renderStatic(){
@@ -673,9 +681,42 @@ function triggerShutter(){
 }
 
 function snapPhoto(){
+  const rv = document.getElementById('raw-video');
+  // for live camera: render at FULL resolution for the saved photo
+  if(liveStream && rv.videoWidth > 0){
+    const fullCanvas = document.createElement('canvas');
+    fullCanvas.width  = rv.videoWidth;
+    fullCanvas.height = rv.videoHeight;
+    // temporarily resize GL canvas to full res, render, then restore
+    const prev_w = glCanvas ? glCanvas.width : 0;
+    const prev_h = glCanvas ? glCanvas.height : 0;
+    if(glReady){
+      glCanvas.width  = rv.videoWidth;
+      glCanvas.height = rv.videoHeight;
+      renderGL(rv, facing==='user');
+      // copy from GL canvas to fullCanvas
+      fullCanvas.getContext('2d').drawImage(glCanvas, 0, 0);
+      // restore preview size
+      glCanvas.width  = prev_w;
+      glCanvas.height = prev_h;
+    } else {
+      const ctx = fullCanvas.getContext('2d');
+      ctx.save();
+      if(facing==='user'){ctx.translate(rv.videoWidth,0);ctx.scale(-1,1);}
+      ctx.drawImage(rv, 0, 0);
+      ctx.restore();
+      applyFiltersCPU(fullCanvas);
+    }
+    const data = fullCanvas.toDataURL('image/jpeg', 0.95);
+    const a = document.createElement('a');
+    a.download = 'fujicam_'+simKey+'_'+Date.now()+'.jpg';
+    a.href = data; document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    return;
+  }
+  // for static image
   const canvas=document.getElementById('main-canvas');
   if(!canvas.width){alert('No image to capture.');return;}
-  const data=canvas.toDataURL('image/jpeg',0.93);
+  const data=canvas.toDataURL('image/jpeg',0.95);
   if(data.length<500){alert('Frame not ready, try again.');return;}
   const a=document.createElement('a');
   a.download='fujicam_'+simKey+'_'+Date.now()+'.jpg';
@@ -686,7 +727,12 @@ function startRec(){
   const canvas=document.getElementById('main-canvas');
   if(!canvas.width){alert('Open the camera first.');return;}
   const cs=canvas.captureStream(30);
-  if(liveStream)liveStream.getAudioTracks().forEach(t=>cs.addTrack(t));
+  // add audio track from a separate audio-only stream
+  if(liveStream && navigator.mediaDevices){
+    navigator.mediaDevices.getUserMedia({audio:true,video:false})
+      .then(aStream=>{ aStream.getAudioTracks().forEach(t=>cs.addTrack(t)); })
+      .catch(()=>{});
+  }
   const mime=MediaRecorder.isTypeSupported('video/webm;codecs=vp9')?'video/webm;codecs=vp9':'video/webm';
   recorder=new MediaRecorder(cs,{mimeType:mime});
   recChunks=[];
