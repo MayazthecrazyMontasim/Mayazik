@@ -1240,17 +1240,10 @@ function saveOutput() {
 // init
 initSliders(); updateMetaPill();
 
-// Mobile-friendly touch handlers for idle overlay buttons
-(function() {
-  function bindBtn(id, fn) {
-    const el = document.getElementById(id);
-    if (!el) return;
-    el.addEventListener('touchstart', function(e) { e.preventDefault(); fn(); }, {passive: false});
-    el.addEventListener('click', fn);
-  }
-  bindBtn('open-cam-btn', startCamera);
-  bindBtn('load-media-btn', function() { document.getElementById('file-input').click(); });
-})();
+// Auto-start camera immediately on page load
+window.addEventListener('load', function() {
+  startCamera();
+});
 </script>
 </body>
 </html>
