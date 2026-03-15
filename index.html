@@ -903,16 +903,37 @@ function flipCamera() {
 function startLiveRender() {
   const lv = document.getElementById('live-video');
   const canvas = document.getElementById('preview-canvas');
-  const wrap = document.getElementById('viewfinder-wrap') || canvas.parentElement;
-  canvas.width  = wrap.clientWidth  * (window.devicePixelRatio||1);
-  canvas.height = Math.round(canvas.width * 9/16);
+
+  // hide raw video feed — render ONLY through filtered canvas
+  lv.style.display = 'none';
+  canvas.style.display = 'block';
+  canvas.style.position = 'absolute';
+  canvas.style.inset = '0';
+  canvas.style.width = '100%';
+  canvas.style.height = '100%';
+  canvas.style.objectFit = 'cover';
+
   function tick() {
-    if (!liveStream) return;
-    canvas.getContext('2d').drawImage(lv,0,0,canvas.width,canvas.height);
-    applyFilters(canvas); drawZebra(canvas); buildHistogram();
+    if (!liveStream) { liveAnimId = requestAnimationFrame(tick); return; }
+    if (lv.readyState >= 2 && lv.videoWidth > 0) {
+      if (canvas.width !== lv.videoWidth || canvas.height !== lv.videoHeight) {
+        canvas.width  = lv.videoWidth;
+        canvas.height = lv.videoHeight;
+      }
+      const ctx = canvas.getContext('2d');
+      ctx.save();
+      // mirror front camera
+      if (facingMode === 'user') { ctx.translate(canvas.width, 0); ctx.scale(-1, 1); }
+      ctx.drawImage(lv, 0, 0, canvas.width, canvas.height);
+      ctx.restore();
+      applyFilters(canvas);
+      drawZebra(canvas);
+    }
     liveAnimId = requestAnimationFrame(tick);
   }
-  tick(); startTimecode();
+  tick();
+  startTimecode();
+  setInterval(() => { if (liveStream) buildHistogram(); }, 600);
 }
 
 function startTimecode() {
@@ -1110,12 +1131,30 @@ function selectSim(k, el) {
   if(sourceImage&&!sourceVideo) renderFromSource();
 }
 
+function snapFrame() {
+  const canvas = document.getElementById('preview-canvas');
+  const dataUrl = canvas.toDataURL('image/jpeg', 0.93);
+  if (dataUrl.length < 1000) { alert('Frame not ready yet — try again.'); return; }
+  const link = document.createElement('a');
+  link.download = 'fujicam_' + currentSim + '_' + Date.now() + '.jpg';
+  link.href = dataUrl;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+}
+
 function saveOutput() {
-  const canvas=document.getElementById('preview-canvas');
-  if(!sourceImage&&!sourceVideo&&!liveStream){alert('Nothing to save yet.');return;}
-  const link=document.createElement('a');
-  link.download='fujicam_'+currentSim+(sourceVideo?'_frame':'')+'.jpg';
-  link.href=canvas.toDataURL('image/jpeg',0.93); link.click();
+  const canvas = document.getElementById('preview-canvas');
+  if (!sourceImage && !sourceVideo && !liveStream) { alert('Open the camera or load a photo first.'); return; }
+  // For live mode, pause the loop briefly to get a clean frame
+  const dataUrl = canvas.toDataURL('image/jpeg', 0.93);
+  if (dataUrl === 'data:,') { alert('Frame not ready yet, try again.'); return; }
+  const link = document.createElement('a');
+  link.download = 'fujicam_' + currentSim + '_' + Date.now() + '.jpg';
+  link.href = dataUrl;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
 }
 
 // init
