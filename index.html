@@ -854,17 +854,38 @@ function setMode(m) {
   modes.forEach(x => {
     const btn = document.getElementById('mb-'+x);
     btn.className = 'mode-btn' + (x===m ? ' active-'+x : '');
-    const iconPaths = btn.querySelectorAll('svg [stroke]');
-    iconPaths.forEach(p => { if (!btn.classList.contains('active-'+x)) p.setAttribute('stroke','#888'); });
   });
   document.getElementById('mode-badge').textContent = m;
   const clipsSec = document.getElementById('clips-section');
   const flipBtn = document.getElementById('ov-flip');
   const sb = document.getElementById('shutter-btn');
-  sb.className = 'shutter-btn' + (m==='video'?' video-mode':m==='live'?' live-mode':'');
-  if (m==='photo')  { clipsSec.style.display='none';  flipBtn.style.display='none';  stopLive(); }
-  if (m==='video')  { clipsSec.style.display='block'; flipBtn.style.display='none';  stopLive(); }
-  if (m==='live')   { clipsSec.style.display='block'; flipBtn.style.display='flex';  document.getElementById('idle-overlay').style.display='none'; startLive(); }
+
+  // update shutter button color per mode
+  sb.classList.remove('video-mode','live-mode','recording');
+  if (m==='video') sb.classList.add('video-mode');
+
+  // show/hide clips panel
+  clipsSec.style.display = (m==='video') ? 'block' : 'none';
+
+  // flip button always visible when camera is live
+  flipBtn.style.display = liveStream ? 'flex' : 'none';
+
+  // update shutter label
+  updateShutterLabel();
+
+  // all modes use the live camera — start it if not already running
+  document.getElementById('idle-overlay').style.display = 'none';
+  if (!liveStream) startLive();
+
+  // if switching away from video mid-record, stop
+  if (m !== 'video' && isRecording) stopRecord();
+}
+
+function updateShutterLabel() {
+  const sb = document.getElementById('shutter-btn');
+  // Photo mode = coral, Video mode = jade/green, recording = red pulse
+  sb.classList.remove('video-mode');
+  if (camMode === 'video') sb.classList.add('video-mode');
 }
 
 function handleIdleClick() {
@@ -882,6 +903,7 @@ function startLive() {
       const lv = document.getElementById('live-video');
       lv.srcObject = stream; lv.style.display='block';
       document.getElementById('idle-overlay').style.display = 'none';
+      document.getElementById('ov-flip').style.display = 'flex';
       lv.onloadedmetadata = () => { lv.play(); startLiveRender(); };
     })
     .catch(err => { console.warn(err); alert('Camera permission denied or unavailable.\n\nTip: this app must be served over HTTPS for camera access.'); });
@@ -947,22 +969,30 @@ function startTimecode() {
 }
 
 function triggerShutter() {
-  // In live mode, shutter always snaps a still with current filter applied
-  if (camMode==='live' && liveStream) {
-    const fl = document.getElementById('flash-ol');
-    fl.style.animation='none'; void fl.offsetWidth; fl.style.animation='flash-go 0.3s ease-out forwards';
-    snapFrame();
+  if (camMode === 'video') {
+    // VIDEO mode: tap = start/stop recording
+    if (!liveStream) { startLive(); return; }
+    if (!isRecording) {
+      startRecord();
+      document.getElementById('shutter-btn').classList.add('recording');
+    } else {
+      stopRecord();
+      document.getElementById('shutter-btn').classList.remove('recording');
+      document.getElementById('shutter-btn').classList.add('video-mode');
+    }
     return;
   }
-  if (camMode==='video' && sourceVideo) { if(!isRecording) startRecord(); else stopRecord(); return; }
+  // PHOTO mode (default): tap = snap filtered photo
+  if (!liveStream) { startLive(); return; }
   const fl = document.getElementById('flash-ol');
   fl.style.animation='none'; void fl.offsetWidth; fl.style.animation='flash-go 0.3s ease-out forwards';
-  if (sourceImage||sourceVideo) renderFromSource();
+  snapFrame();
 }
 
 function startRecord() {
+  if (!liveStream) { alert('Open the camera first.'); return; }
   let stream;
-  if (camMode==='live' && liveStream) {
+  if (liveStream) {
     const cs = document.getElementById('preview-canvas').captureStream(30);
     liveStream.getAudioTracks().forEach(t=>cs.addTrack(t));
     stream = cs;
@@ -992,9 +1022,9 @@ function stopRecord() {
   if (mediaRecorder && mediaRecorder.state!=='inactive') mediaRecorder.stop();
   clearInterval(recInt);
   document.getElementById('rec-hud').style.display = 'none';
-  document.getElementById('shutter-btn').classList.remove('recording');
-  const m = camMode;
-  document.getElementById('shutter-btn').className = 'shutter-btn' + (m==='video'?' video-mode':m==='live'?' live-mode':'');
+  const sb = document.getElementById('shutter-btn');
+  sb.classList.remove('recording');
+  if (camMode === 'video') sb.classList.add('video-mode');
 }
 
 function finalizeClip() {
