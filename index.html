@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#fff8f2">
-<title>FUJI CAM</title>
+<title>Mayazik</title>
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;1,500&family=DM+Mono:wght@400;500&family=Lato:wght@300;400;700&display=swap" rel="stylesheet">
 <style>
 :root{--cream:#fff8f2;--warm:#fffcf9;--coral:#f4735a;--coral-l:#fce8e3;--jade:#3db89c;--jade-l:#e0f5ef;--amber:#f0a500;--amber-l:#fef3d0;--lav:#8b75c9;--lav-l:#ede8f8;--ink:#1c1a18;--ink2:#4a453f;--ink3:#9a8f85;--ink4:#e8e0d8;--border:rgba(28,26,24,0.1);--sh:0 2px 10px rgba(28,26,24,0.08);}
@@ -16,35 +16,35 @@ html,body{width:100%;min-height:100%;background:var(--cream);font-family:'Lato',
 .logo{font-family:'Playfair Display',serif;font-size:22px;font-weight:700;color:var(--ink);letter-spacing:-0.5px;}
 .logo span{font-style:italic;color:var(--coral);}
 .mbadge{font-family:'DM Mono',monospace;font-size:10px;letter-spacing:2px;background:var(--ink);color:var(--cream);padding:4px 10px;border-radius:20px;}
-.vf-wrap{position:relative;width:100%;background:#0e0c0a;overflow:hidden;padding-bottom:56.25%;}
+.vf-wrap{position:relative;width:100%;background:#0e0c0a;overflow:hidden;padding-bottom:56.25%;min-height:200px;max-height:80vh;}
 #main-canvas{position:absolute;inset:0;width:100%;height:100%;display:none;object-fit:cover;z-index:1;}
 #raw-video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:none;}
 #zebra-canvas{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;display:none;z-index:3;}
-.abar{position:absolute;left:0;right:0;background:#000;height:0;transition:height 0.3s;z-index:4;pointer-events:none;}
-.abar.top{top:0;}.abar.bot{bottom:0;}
-.vfc{position:absolute;inset:0;pointer-events:none;z-index:5;}
-.c{position:absolute;width:20px;height:20px;}
-.c.tl{top:12px;left:12px;border-top:2px solid rgba(255,255,255,0.55);border-left:2px solid rgba(255,255,255,0.55);}
-.c.tr{top:12px;right:12px;border-top:2px solid rgba(255,255,255,0.55);border-right:2px solid rgba(255,255,255,0.55);}
-.c.bl{bottom:12px;left:12px;border-bottom:2px solid rgba(255,255,255,0.55);border-left:2px solid rgba(255,255,255,0.55);}
-.c.br{bottom:12px;right:12px;border-bottom:2px solid rgba(255,255,255,0.55);border-right:2px solid rgba(255,255,255,0.55);}
-.vfhud{position:absolute;inset:0;pointer-events:none;z-index:6;display:none;}
-.hp{font-family:'DM Mono',monospace;font-size:10px;background:rgba(0,0,0,0.55);color:#fff;padding:3px 8px;border-radius:20px;letter-spacing:0.5px;display:inline-flex;align-items:center;gap:5px;}
-.hud-tl{position:absolute;top:12px;left:12px;}
-.hud-tr{position:absolute;top:12px;right:12px;}
-.hud-bl{position:absolute;bottom:12px;left:12px;}
-.hud-br{position:absolute;bottom:12px;right:12px;display:flex;flex-direction:column;align-items:flex-end;gap:4px;}
-.rec-pill{background:rgba(220,50,40,0.9)!important;}
-.rblink{width:6px;height:6px;border-radius:50%;background:#fff;animation:blink 1s infinite;}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 @keyframes blink{0%,100%{opacity:1;}50%{opacity:0.1;}}
-.zwarn{background:rgba(240,165,0,0.85)!important;display:none;}
-.tcdisp{font-family:'DM Mono',monospace;font-size:9px;color:rgba(255,255,255,0.5);letter-spacing:1px;display:none;}
-.idle{position:absolute;top:0;left:0;right:0;bottom:0;width:100%;height:100%;background:#0e0c0a;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;z-index:100;}
-.idle-icon{width:60px;height:60px;border-radius:50%;border:2px solid rgba(255,255,255,0.4);display:flex;align-items:center;justify-content:center;}
-.ibtn{font-family:'DM Mono',monospace;font-size:11px;letter-spacing:1.5px;text-transform:uppercase;cursor:pointer;border-radius:30px;padding:11px 26px;border:none;}
-.ibtn.p{background:#f4735a;color:#fff;box-shadow:0 4px 16px rgba(244,115,90,0.45);}
-.ibtn.s{background:rgba(255,255,255,0.12);color:rgba(255,255,255,0.7);border:1.5px solid rgba(255,255,255,0.3);}
-.fl{position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none;z-index:20;}
+
+
+
+
+
+
+
+
 @keyframes flash-go{0%{opacity:0.9;}100%{opacity:0;}}
 .sim-strip{display:flex;gap:10px;overflow-x:auto;padding:16px 20px;scrollbar-width:none;border-bottom:1px solid var(--border);}
 .sim-strip::-webkit-scrollbar{display:none;}
@@ -144,29 +144,45 @@ input[type=file]{display:none;}
 </header>
 
 <div class="vf-wrap" id="vf-wrap">
-  <canvas id="main-canvas"></canvas>
-  <canvas id="zebra-canvas"></canvas>
-  <video id="raw-video" autoplay muted playsinline></video>
-  <div class="abar top" id="bar-top"></div>
-  <div class="abar bot" id="bar-bot"></div>
-  <div class="vfc"><div class="c tl"></div><div class="c tr"></div><div class="c bl"></div><div class="c br"></div></div>
-  <div class="vfhud">
-    <div class="hud-tl"><span class="hp" id="hud-sim">Classic Chrome</span></div>
-    <div class="hud-tr"><span class="hp" id="hud-meta">F2.8 · 1/125 · ISO400</span></div>
-    <div class="hud-bl"><span class="hp rec-pill" id="rec-hud" style="display:none;"><span class="rblink"></span><span id="rec-time">00:00:00</span></span></div>
-    <div class="hud-br"><span class="hp zwarn" id="zwarn">ZEBRA</span><span class="tcdisp" id="tcdisp">00:00:00:00</span></div>
-  </div>
-  <div class="idle" id="idle">
-    <div class="idle-icon">
-      <svg width="26" height="26" viewBox="0 0 26 26" fill="none">
-        <circle cx="13" cy="13" r="8" stroke="rgba(255,255,255,0.35)" stroke-width="1.5"/>
-        <circle cx="13" cy="13" r="4.5" fill="rgba(255,255,255,0.18)"/>
+  <!-- IDLE SCREEN - shown by default, hidden when camera starts -->
+  <div id="idle" style="position:absolute;inset:0;background:#0e0c0a;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;z-index:50;">
+    <div style="width:64px;height:64px;border-radius:50%;border:2px solid rgba(255,255,255,0.3);display:flex;align-items:center;justify-content:center;">
+      <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+        <circle cx="14" cy="14" r="9" stroke="rgba(255,255,255,0.5)" stroke-width="1.5"/>
+        <circle cx="14" cy="14" r="5" fill="rgba(255,255,255,0.2)"/>
       </svg>
     </div>
-    <button class="ibtn p" onclick="openCamera()">Open Camera</button>
-    <button class="ibtn s" onclick="document.getElementById('fin').click()">Load Photo / Video</button>
+    <button onclick="openCamera()" style="font-family:'DM Mono',monospace;font-size:12px;letter-spacing:2px;text-transform:uppercase;background:#f4735a;color:#fff;border:none;border-radius:30px;padding:13px 30px;cursor:pointer;box-shadow:0 4px 20px rgba(244,115,90,0.5);">Open Camera</button>
+    <button onclick="document.getElementById('fin').click()" style="font-family:'DM Mono',monospace;font-size:10px;letter-spacing:1px;text-transform:uppercase;background:rgba(255,255,255,0.1);color:rgba(255,255,255,0.6);border:1.5px solid rgba(255,255,255,0.25);border-radius:30px;padding:10px 22px;cursor:pointer;">Load Photo / Video</button>
   </div>
-  <div class="fl" id="flash"></div>
+
+  <!-- CAMERA/FILTER OUTPUT -->
+  <video id="raw-video" autoplay muted playsinline style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:none;"></video>
+  <canvas id="main-canvas" style="position:absolute;inset:0;width:100%;height:100%;display:none;object-fit:cover;z-index:2;"></canvas>
+  <canvas id="zebra-canvas" style="position:absolute;inset:0;width:100%;height:100%;display:none;pointer-events:none;z-index:3;"></canvas>
+
+  <!-- OVERLAYS -->
+  <div id="bar-top" style="position:absolute;top:0;left:0;right:0;height:0;background:#000;z-index:4;transition:height 0.3s;pointer-events:none;"></div>
+  <div id="bar-bot" style="position:absolute;bottom:0;left:0;right:0;height:0;background:#000;z-index:4;transition:height 0.3s;pointer-events:none;"></div>
+
+  <!-- CORNERS -->
+  <div style="position:absolute;inset:0;pointer-events:none;z-index:5;">
+    <div style="position:absolute;top:12px;left:12px;width:20px;height:20px;border-top:2px solid rgba(255,255,255,0.55);border-left:2px solid rgba(255,255,255,0.55);"></div>
+    <div style="position:absolute;top:12px;right:12px;width:20px;height:20px;border-top:2px solid rgba(255,255,255,0.55);border-right:2px solid rgba(255,255,255,0.55);"></div>
+    <div style="position:absolute;bottom:12px;left:12px;width:20px;height:20px;border-bottom:2px solid rgba(255,255,255,0.55);border-left:2px solid rgba(255,255,255,0.55);"></div>
+    <div style="position:absolute;bottom:12px;right:12px;width:20px;height:20px;border-bottom:2px solid rgba(255,255,255,0.55);border-right:2px solid rgba(255,255,255,0.55);"></div>
+  </div>
+
+  <!-- HUD -->
+  <div id="vfhud" style="position:absolute;inset:0;pointer-events:none;z-index:6;display:none;">
+    <span id="hud-sim" style="position:absolute;top:12px;left:12px;font-family:'DM Mono',monospace;font-size:10px;background:rgba(0,0,0,0.55);color:#fff;padding:3px 8px;border-radius:20px;">Classic Chrome</span>
+    <span id="hud-meta" style="position:absolute;top:12px;right:12px;font-family:'DM Mono',monospace;font-size:10px;background:rgba(0,0,0,0.55);color:#fff;padding:3px 8px;border-radius:20px;">F2.8 · 1/125 · ISO400</span>
+    <span id="rec-hud" style="display:none;position:absolute;bottom:12px;left:12px;font-family:'DM Mono',monospace;font-size:10px;background:rgba(220,50,40,0.9);color:#fff;padding:3px 10px;border-radius:20px;align-items:center;gap:5px;"><span style="width:6px;height:6px;border-radius:50%;background:#fff;display:inline-block;animation:blink 1s infinite;"></span><span id="rec-time">00:00:00</span></span>
+    <span id="zwarn" style="display:none;position:absolute;bottom:12px;right:12px;font-family:'DM Mono',monospace;font-size:10px;background:rgba(240,165,0,0.85);color:#fff;padding:3px 8px;border-radius:20px;">ZEBRA</span>
+    <span id="tcdisp" style="display:none;position:absolute;bottom:30px;right:12px;font-family:'DM Mono',monospace;font-size:9px;color:rgba(255,255,255,0.5);letter-spacing:1px;"></span>
+  </div>
+
+  <div id="flash" style="position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none;z-index:20;"></div>
 </div>
 
 <div class="sim-strip">
@@ -711,8 +727,8 @@ function loadFile(input){
   if(rafId){cancelAnimationFrame(rafId);rafId=null;}
   document.getElementById('idle').style.display='none';
   document.getElementById('main-canvas').style.display='block';
+  document.getElementById('vfhud').style.display='block';
   document.getElementById('ov-f').style.display='none';
-  document.querySelector('.vfhud').style.display='block';
   if(file.type.startsWith('image/')){
     const img=new Image();
     img.onload=()=>{srcEl=img;renderStatic();};
