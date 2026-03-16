@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#fff8f2">
-<title>Mayazik</title>
+<title>FUJI CAM</title>
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;1,500&family=DM+Mono:wght@400;500&family=Lato:wght@300;400;700&display=swap" rel="stylesheet">
 <style>
 :root{--cream:#fff8f2;--warm:#fffcf9;--coral:#f4735a;--coral-l:#fce8e3;--jade:#3db89c;--jade-l:#e0f5ef;--amber:#f0a500;--amber-l:#fef3d0;--lav:#8b75c9;--lav-l:#ede8f8;--ink:#1c1a18;--ink2:#4a453f;--ink3:#9a8f85;--ink4:#e8e0d8;--border:rgba(28,26,24,0.1);--sh:0 2px 10px rgba(28,26,24,0.08);}
@@ -267,8 +267,37 @@ function cyDial(n){
   document.getElementById('dk-'+n).style.transform='rotate('+dRot[n]+'deg)';
   document.getElementById('dv-'+n).textContent=DOPTS[n][dIdx[n]];
   updateMeta();
+  // re-render static image immediately; live/video loops pick up automatically
+  if(srcEl && srcEl.tagName==='IMG') renderStatic();
 }
 function updateMeta(){document.getElementById('hud-meta').textContent='F2.8 · '+DOPTS.ss[dIdx.ss]+' · ISO'+DOPTS.iso[dIdx.iso];}
+
+// dial value -> actual rendering parameters
+function getDialUniforms(){
+  // ISO: 100=darkest, 6400=brightest; map to brightness offset
+  const isoVals={100:-0.08, 200:-0.04, 400:0, 800:0.04, 1600:0.09, 3200:0.14, 6400:0.20};
+  const iso = isoVals[DOPTS.iso[dIdx.iso]] || 0;
+
+  // Shutter speed: fast=punchy highlights, slow=softer
+  const ssVals={'1/30':0.12,'1/60':0.07,'1/125':0,'1/250':-0.04,'1/500':-0.07,'1/1000':-0.09,'1/2000':-0.11};
+  const ss = ssVals[DOPTS.ss[dIdx.ss]] || 0;
+
+  // EXP compensation: -2 to +2 stops, each stop ~0.08 brightness
+  const expVals={'-2':-0.16,'-1.5':-0.12,'-1':-0.08,'-0.5':-0.04,'±0':0,'+0.5':0.04,'+1':0.08,'+1.5':0.12,'+2':0.16};
+  const expComp = expVals[DOPTS.exp[dIdx.exp]] || 0;
+
+  // White balance: color temperature shifts R/G/B
+  const wbVals={
+    'Auto':   [1.0, 1.0, 1.0],
+    '3000K':  [1.18, 1.02, 0.72],  // very warm / tungsten
+    '4000K':  [1.10, 1.01, 0.84],  // warm
+    '5500K':  [1.0,  1.0,  1.0],   // daylight (neutral)
+    '6500K':  [0.92, 0.99, 1.12],  // cool / overcast
+    '7500K':  [0.84, 0.97, 1.22],  // very cool / shade
+  };
+  const wb = wbVals[DOPTS.wb[dIdx.wb]] || [1,1,1];
+  return {iso, ss, expComp, wb};
+}
 
 function setSim(key,el){
   simKey=key;
@@ -363,6 +392,10 @@ function initGL(){
     uniform vec3 u_shadowTint;
     uniform vec3 u_midTint;
     uniform vec3 u_mult;
+    uniform vec3 u_wb;
+    uniform float u_iso;
+    uniform float u_ss;
+    uniform float u_expComp;
     uniform float u_fade;
     uniform vec3 u_lift;
     uniform float u_hsc;
@@ -398,6 +431,22 @@ function initGL(){
 
       // channel multipliers
       col *= u_mult;
+
+      // white balance: shift R and B channels
+      col.r *= u_wb.r;
+      col.g *= u_wb.g;
+      col.b *= u_wb.b;
+
+      // ISO: boosts brightness + adds slight noise in shadows (high ISO look)
+      col += u_iso;
+
+      // shutter speed: affects highlight compression (fast SS = less motion blur look = punchier highlights)
+      float hlCompress = 1.0 - u_ss * max(0.0, lum - 0.7);
+      col *= hlCompress + (1.0 - hlCompress) * (1.0 - u_ss);
+      col = col + u_ss * max(0.0, col - 0.85) * 0.5;
+
+      // exposure compensation: direct brightness offset
+      col += u_expComp;
 
       // film lift (faded blacks)
       if(u_fade > 0.0) col = mix(col, vec3(1.0), u_fade);
@@ -469,6 +518,7 @@ function renderGL(source, flipH){
   const grainAmt=(ctrl.grain+(s.gr||0))/2/10;
   gl.uniform1i(u('u_tex'),0);
   gl.uniform1i(u('u_flip'), flipH?1:0);
+  const dialU = getDialUniforms();
   gl.uniform1f(u('u_brightness'), s.br/100);
   gl.uniform1f(u('u_contrast'),   1+s.co/100);
   gl.uniform1f(u('u_saturation'), satAdj);
@@ -483,6 +533,10 @@ function renderGL(source, flipH){
   gl.uniform1f(u('u_shShift'),    shS);
   gl.uniform1f(u('u_grain'),      grainAmt);
   gl.uniform1f(u('u_time'),       (Date.now()%10000)/10000);
+  gl.uniform3f(u('u_wb'),         dialU.wb[0], dialU.wb[1], dialU.wb[2]);
+  gl.uniform1f(u('u_iso'),        dialU.iso);
+  gl.uniform1f(u('u_ss'),         dialU.ss);
+  gl.uniform1f(u('u_expComp'),    dialU.expComp);
   gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
   return true;
 }
@@ -495,7 +549,8 @@ function applyFiltersCPU(canvas){
   const id=ctx.getImageData(0,0,cw,ch),d=id.data;
   const grAmt=(ctrl.grain+(sim.gr||0))/2;
   const hlS=ctrl.hl*8,shS=ctrl.sh*8;
-  const bAdj=sim.br/100,cAdj=1+sim.co/100;
+  const dialU2 = getDialUniforms();
+  const bAdj=(sim.br/100)+dialU2.iso+dialU2.expComp,cAdj=1+sim.co/100;
   const sAdj=1+(sim.sa+ctrl.col*10)/100;
   const fade=sim.fade||0,lR=sim.liftR||0,lG=sim.liftG||0,lB=sim.liftB||0,hsc=sim.hsc||0;
   for(let i=0;i<d.length;i+=4){
@@ -508,6 +563,8 @@ function applyFiltersCPU(canvas){
     r+=hm*hlS/255; g+=hm*hlS/255; b+=hm*hlS/255;
     r+=sm*shS/255; g+=sm*shS/255; b+=sm*shS/255;
     r*=sim.r; g*=sim.g; b*=sim.b;
+    // WB
+    r*=dialU2.wb[0]; g*=dialU2.wb[1]; b*=dialU2.wb[2];
     if(fade){r=r*(1-fade)+fade;g=g*(1-fade)+fade;b=b*(1-fade)+fade;}
     if(lR){r+=lR*sm;g+=lG*sm;b+=lB*sm;}
     if(hsc){const cy=Math.max(0,Math.min(g,b)-r);g+=hsc*cy*0.5;b+=hsc*cy*0.3;}
