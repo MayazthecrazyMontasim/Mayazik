@@ -680,69 +680,73 @@ function exportFilteredVideo(){
   const lbl=document.getElementById('export-label');
   const prog=document.getElementById('export-progress');
   const bar=document.getElementById('export-progress-bar');
-
   if(btn.classList.contains('exporting'))return;
 
-  // setup canvas at full video resolution
+  if(!glReady)glReady=initGL();
   const mc=document.getElementById('main-canvas');
   const origW=mc.width,origH=mc.height;
-  mc.width=vid.videoWidth;mc.height=vid.videoHeight;
-  if(!glReady)glReady=initGL();
+  const vw=vid.videoWidth,vh=vid.videoHeight;
+  mc.width=vw;mc.height=vh;
 
-  const cs=mc.captureStream(30);
-  // capture audio directly from the source video element
-  if(vid.captureStream){
-    const vs=vid.captureStream();
-    vs.getAudioTracks().forEach(t=>cs.addTrack(t));
-  } else if(vid.mozCaptureStream){
-    const vs=vid.mozCaptureStream();
-    vs.getAudioTracks().forEach(t=>cs.addTrack(t));
-  }
-  const mime=MediaRecorder.isTypeSupported('video/webm;codecs=vp9')?'video/webm;codecs=vp9':'video/webm';
-  const rec=new MediaRecorder(cs,{mimeType:mime});
+  const duration=vid.duration;
+  const fps=30;
+  const totalFrames=Math.ceil(duration*fps);
   const chunks=[];
+
+  btn.classList.add('exporting');
+  prog.style.display='block';
+  lbl.textContent='Preparing export...';
+
+  // Use MediaRecorder on canvas stream for video
+  const cs=mc.captureStream(fps);
+  const mime=MediaRecorder.isTypeSupported('video/webm;codecs=vp9')?'video/webm;codecs=vp9':'video/webm';
+  const rec=new MediaRecorder(cs,{mimeType:mime,videoBitsPerSecond:8000000});
   rec.ondataavailable=e=>{if(e.data.size>0)chunks.push(e.data);};
   rec.onstop=()=>{
     const blob=new Blob(chunks,{type:'video/webm'});
     const a=document.createElement('a');
     a.href=URL.createObjectURL(blob);
-    a.download='fujicam_export_'+simKey+'_'+Date.now()+'.webm';
+    a.download='fujicam_'+simKey+'_'+Date.now()+'.webm';
     document.body.appendChild(a);a.click();document.body.removeChild(a);
-    // restore
     mc.width=origW;mc.height=origH;
     btn.classList.remove('exporting');
     lbl.textContent='Export filtered video';
     prog.style.display='none';bar.style.width='0%';
-    vid.pause();vid.currentTime=0;
-    // restart preview loop
+    vid.muted=false;
     startVideoLoop(vid);
   };
 
-  // render each frame through filter
-  vid.currentTime=0;
-  vid.playbackRate=1;
-  rec.start(100);
-  btn.classList.add('exporting');
-  prog.style.display='block';
+  // Frame-by-frame seek export — no real-time playback lag
+  vid.pause();
+  vid.muted=true;
+  rec.start();
 
-  const duration=vid.duration;
-  let exportRaf;
-  function exportTick(){
-    if(vid.ended||vid.currentTime>=duration-0.05){
-      cancelAnimationFrame(exportRaf);
-      setTimeout(()=>rec.stop(),200);
+  let frameIdx=0;
+  const frameDur=1/fps;
+
+  function processNextFrame(){
+    if(frameIdx>=totalFrames){
+      setTimeout(()=>rec.stop(),300);
       return;
     }
-    lbl.textContent='Exporting... '+Math.round((vid.currentTime/duration)*100)+'%';
-    bar.style.width=Math.round((vid.currentTime/duration)*100)+'%';
-    if(!renderGL(vid,false)){
-      mc.getContext('2d').drawImage(vid,0,0,mc.width,mc.height);
-      applyFiltersCPU(mc);
-    }
-    exportRaf=requestAnimationFrame(exportTick);
+    const pct=Math.round((frameIdx/totalFrames)*100);
+    lbl.textContent='Exporting... '+pct+'%';
+    bar.style.width=pct+'%';
+    vid.currentTime=frameIdx*frameDur;
   }
 
-  vid.play().then(()=>{exportTick();}).catch(err=>{console.error(err);rec.stop();});
+  vid.onseeked=function(){
+    // render this frame through filter
+    if(!renderGL(vid,false)){
+      mc.getContext('2d').drawImage(vid,0,0,vw,vh);
+      applyFiltersCPU(mc);
+    }
+    frameIdx++;
+    // small timeout lets MediaRecorder capture the frame
+    setTimeout(processNextFrame,1000/fps);
+  };
+
+  processNextFrame();
 }
 
 function doSave(){if(!liveStream&&!srcEl){alert('Open camera or load a photo first.');return;}if(mode==='video'&&isRec){stopRec();return;}snapPhoto();}
