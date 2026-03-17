@@ -659,85 +659,132 @@ function togClip(i){
 function dlClip(i){const a=document.createElement('a');a.href=clips[i].url;a.download='fujicam_clip'+(i+1)+'_'+simKey+'.webm';document.body.appendChild(a);a.click();document.body.removeChild(a);}
 function delClip(i){URL.revokeObjectURL(clips[i].url);clips.splice(i,1);renderClips();}
 
+
 function exportVideo(){
   if(!srcEl||srcEl.tagName!=='VIDEO'){alert('Load a video first.');return;}
   const btn=document.getElementById('export-btn');
   if(btn.classList.contains('busy'))return;
   const lbl=document.getElementById('exp-lbl');
   const prog=document.getElementById('exp-prog');
-  const bar=document.getElementById('exp-bar');
+  const pbar=document.getElementById('exp-bar');
   const vid=srcEl;
-  const duration=vid.duration;
-
-  // stop preview loop
-  if(rafId){cancelAnimationFrame(rafId);rafId=null;}
-
-  // resize main canvas to full video res
-  const mc=document.getElementById('main-canvas');
-  mc.width=vid.videoWidth;
-  mc.height=vid.videoHeight;
-  mc.style.display='block';
-
-  // record the canvas stream
-  const cs=mc.captureStream(30);
-  // add audio
-  try{
-    const avs=vid.captureStream?vid.captureStream():null;
-    if(avs)avs.getAudioTracks().forEach(t=>cs.addTrack(t));
-  }catch(e){}
-
-  const mime=MediaRecorder.isTypeSupported('video/webm;codecs=vp9')?'video/webm;codecs=vp9':'video/webm';
-  const rec=new MediaRecorder(cs,{mimeType:mime,videoBitsPerSecond:6000000});
-  const chunks=[];
-  rec.ondataavailable=e=>{if(e.data.size>0)chunks.push(e.data);};
-  rec.onstop=()=>{
-    const blob=new Blob(chunks,{type:'video/webm'});
-    const a=document.createElement('a');
-    a.href=URL.createObjectURL(blob);
-    a.download='fujicam_'+simKey+'_'+Date.now()+'.webm';
-    document.body.appendChild(a);a.click();document.body.removeChild(a);
-    btn.classList.remove('busy');
-    lbl.textContent='Export filtered video';
-    prog.style.display='none';bar.style.width='0%';
-    vid.muted=false;
-    startVideoLoop(vid);
-  };
 
   btn.classList.add('busy');
   prog.style.display='block';
-  lbl.textContent='Exporting...';
-  bar.style.width='0%';
+  lbl.textContent='Processing...';
+  pbar.style.width='0%';
 
+  // stop live preview loop while processing
+  if(rafId){cancelAnimationFrame(rafId);rafId=null;}
+
+  const fps=30;
+  const duration=vid.duration;
+  const totalFrames=Math.ceil(duration*fps);
+  const vw=vid.videoWidth;
+  const vh=vid.videoHeight;
+
+  // offscreen canvas for processing — never shown to user
+  const oc=document.createElement('canvas');
+  oc.width=vw; oc.height=vh;
+  const octx=oc.getContext('2d');
+
+  // collect processed frames as ImageData
+  const frames=[];
+  let frameIdx=0;
+
+  vid.pause();
   vid.currentTime=0;
-  vid.muted=true;
-  rec.start(200);
 
-  // simple rAF loop — draw each frame through CPU filter onto canvas
-  let done=false;
-  vid.onended=()=>{
-    if(!done){done=true;setTimeout(()=>rec.stop(),400);}
-  };
-
-  function tick(){
-    if(done)return;
-    if(vid.currentTime>=duration-0.1){
-      if(!done){done=true;setTimeout(()=>rec.stop(),400);}
-      return;
+  function applyToCanvas(canvas){
+    const ctx=canvas.getContext('2d');
+    const s=SIMS[simKey],d2=getDialExtras();
+    const id=ctx.getImageData(0,0,canvas.width,canvas.height);
+    const d=id.data;
+    const bAdj=s.br/100+d2.iso+d2.exp,cAdj=1+s.co/100,sAdj=1+(s.sa+ctrl.col*10)/100;
+    const grAmt=(ctrl.grain+(s.gr||0))/2,hlS=ctrl.hl*8,shS=ctrl.sh*8;
+    const fade=s.fade||0,lR=s.liftR||0,lG=s.liftG||0,lB=s.liftB||0,hsc=s.hsc||0;
+    for(let i=0;i<d.length;i+=4){
+      let r=d[i]/255,g=d[i+1]/255,b=d[i+2]/255;
+      r=(r-.5)*cAdj+.5+bAdj;g=(g-.5)*cAdj+.5+bAdj;b=(b-.5)*cAdj+.5+bAdj;
+      const l=.299*r+.587*g+.114*b;
+      r=l+(r-l)*sAdj;g=l+(g-l)*sAdj;b=l+(b-l)*sAdj;
+      const sm=Math.max(0,1-l*3),hm=Math.max(0,l*2-1);
+      r+=s.sh[0]*sm+s.mt[0];g+=s.sh[1]*sm+s.mt[1];b+=s.sh[2]*sm+s.mt[2];
+      r+=hm*hlS/255;g+=hm*hlS/255;b+=hm*hlS/255;
+      r+=sm*shS/255;g+=sm*shS/255;b+=sm*shS/255;
+      r*=s.r*d2.wb[0];g*=s.g*d2.wb[1];b*=s.b*d2.wb[2];
+      if(fade){r=r*(1-fade)+fade;g=g*(1-fade)+fade;b=b*(1-fade)+fade;}
+      if(lR){r+=lR*sm;g+=lG*sm;b+=lB*sm;}
+      if(hsc){const cy=Math.max(0,Math.min(g,b)-r);g+=hsc*cy*.5;b+=hsc*cy*.3;}
+      if(grAmt>0){const gn=(Math.random()-.5)*grAmt*.025;r+=gn;g+=gn*.9;b+=gn*.8;}
+      d[i]=Math.max(0,Math.min(255,Math.round(r*255)));
+      d[i+1]=Math.max(0,Math.min(255,Math.round(g*255)));
+      d[i+2]=Math.max(0,Math.min(255,Math.round(b*255)));
     }
-    // draw + filter
-    const ctx=mc.getContext('2d');
-    ctx.drawImage(vid,0,0,mc.width,mc.height);
-    applyFiltersCPU(mc);
-    // update progress
-    const pct=Math.round((vid.currentTime/duration)*100);
-    lbl.textContent='Exporting... '+pct+'%';
-    bar.style.width=pct+'%';
-    requestAnimationFrame(tick);
+    ctx.putImageData(id,0,0);
   }
 
-  vid.play().then(()=>requestAnimationFrame(tick)).catch(e=>{
-    console.error(e);rec.stop();
-  });
+  // Phase 1: seek through every frame, apply filter, store ImageData
+  function seekNextFrame(){
+    if(frameIdx>=totalFrames){
+      lbl.textContent='Encoding...';
+      pbar.style.width='100%';
+      encodeFrames();
+      return;
+    }
+    vid.currentTime=frameIdx/fps;
+  }
+
+  vid.onseeked=function(){
+    octx.drawImage(vid,0,0,vw,vh);
+    applyToCanvas(oc);
+    frames.push(octx.getImageData(0,0,vw,vh));
+    frameIdx++;
+    const pct=Math.round((frameIdx/totalFrames)*90);
+    pbar.style.width=pct+'%';
+    lbl.textContent='Processing... '+pct+'%';
+    // yield to browser every 5 frames so UI stays responsive
+    if(frameIdx%5===0){setTimeout(seekNextFrame,0);}
+    else{seekNextFrame();}
+  };
+
+  seekNextFrame();
+
+  // Phase 2: encode frames into WebM using canvas.captureStream + MediaRecorder
+  function encodeFrames(){
+    const ec=document.createElement('canvas');
+    ec.width=vw; ec.height=vh;
+    const ectx=ec.getContext('2d');
+    const cs=ec.captureStream(fps);
+    const mime=MediaRecorder.isTypeSupported('video/webm;codecs=vp9')?'video/webm;codecs=vp9':'video/webm';
+    const rec=new MediaRecorder(cs,{mimeType:mime,videoBitsPerSecond:8000000});
+    const chunks=[];
+    rec.ondataavailable=e=>{if(e.data.size>0)chunks.push(e.data);};
+    rec.onstop=()=>{
+      vid.onseeked=null;
+      const blob=new Blob(chunks,{type:'video/webm'});
+      const a=document.createElement('a');
+      a.href=URL.createObjectURL(blob);
+      a.download='fujicam_'+simKey+'_'+Date.now()+'.webm';
+      document.body.appendChild(a);a.click();document.body.removeChild(a);
+      btn.classList.remove('busy');
+      lbl.textContent='Export filtered video';
+      prog.style.display='none';pbar.style.width='0%';
+      startVideoLoop(vid);
+    };
+
+    rec.start();
+    let i=0;
+    const interval=setInterval(()=>{
+      if(i>=frames.length){
+        clearInterval(interval);
+        setTimeout(()=>rec.stop(),200);
+        return;
+      }
+      ectx.putImageData(frames[i],0,0);
+      i++;
+    },1000/fps);
+  }
 }
 
 function doSave(){if(!liveStream&&!srcEl){alert('Open camera or load a photo first.');return;}if(mode==='video'&&isRec){stopRec();return;}snapPhoto();}
