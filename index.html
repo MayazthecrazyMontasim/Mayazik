@@ -677,14 +677,12 @@ function exportVideo(){
 
   if(rafId){cancelAnimationFrame(rafId);rafId=null;}
 
-  // fresh hidden clone — avoids any seek/state conflict with preview
   const clone=document.createElement('video');
   clone.src=srcVideoURL||srcEl.src;
   clone.muted=true;
   clone.playsInline=true;
   clone.preload='auto';
 
-  // export canvas — matches video resolution
   const ec=document.createElement('canvas');
   const ectx=ec.getContext('2d');
 
@@ -705,13 +703,8 @@ function exportVideo(){
       const gr=ectx.createRadialGradient(ec.width/2,ec.height/2,Math.min(ec.width,ec.height)*0.3,ec.width/2,ec.height/2,Math.max(ec.width,ec.height)*0.75);
       gr.addColorStop(0,'rgba(0,0,0,0)');
       gr.addColorStop(1,'rgba(0,0,0,'+vs+')');
-      ectx.fillStyle=gr;
-      ectx.fillRect(0,0,ec.width,ec.height);
+      ectx.fillStyle=gr;ectx.fillRect(0,0,ec.width,ec.height);
     }
-  }
-
-  function done(rec){
-    if(rec.state!=='inactive')rec.stop();
   }
 
   clone.onloadedmetadata=()=>{
@@ -721,66 +714,68 @@ function exportVideo(){
 
     const cs=ec.captureStream(30);
     const mime=MediaRecorder.isTypeSupported('video/webm;codecs=vp9')?'video/webm;codecs=vp9':'video/webm';
-    const rec=new MediaRecorder(cs,{mimeType:mime,videoBitsPerSecond:8000000});
-    const chunks=[];
+    const rec=new MediaRecorder(cs,{mimeType:mime,videoBitsPerSecond:6000000});
 
+    // stream blobs directly to disk via URL — never accumulate in RAM
+    const blobParts=[];
     rec.ondataavailable=e=>{
-      if(e.data&&e.data.size>0) chunks.push(e.data);
-    };
-
-    rec.onstop=()=>{
-      // free clone
-      clone.pause();clone.src='';clone.load();
-      // download
-      const blob=new Blob(chunks,{type:'video/webm'});
-      const url=URL.createObjectURL(blob);
-      const a=document.createElement('a');
-      a.href=url; a.download='fujicam_'+simKey+'_'+Date.now()+'.webm';
-      document.body.appendChild(a);a.click();
-      setTimeout(()=>{URL.revokeObjectURL(url);document.body.removeChild(a);},1000);
-      // reset UI
-      btn.classList.remove('busy');
-      lbl.textContent='Export filtered video';
-      prog.style.display='none';pbar.style.width='0%';
-      startVideoLoop(srcEl);
-    };
-
-    rec.start(500);
-    clone.play().catch(e=>console.error('play error',e));
-
-    const dur=clone.duration;
-    let stopped=false;
-
-    clone.onended=()=>{
-      if(!stopped){stopped=true;
-        pbar.style.width='100%';lbl.textContent='Saving...';
-        setTimeout(()=>done(rec),600);
+      if(e.data&&e.data.size>0){
+        blobParts.push(e.data);
+        // free memory every 10 chunks
+        if(blobParts.length>10){
+          const keep=blobParts.splice(0);
+          // keep reference for final blob
+          blobParts.push(new Blob(keep,{type:mime}));
+        }
       }
     };
 
-    // safety timeout in case onended doesn't fire
-    setTimeout(()=>{
-      if(!stopped){stopped=true;done(rec);}
-    },(dur+3)*1000);
+    let stopped=false;
+    function finish(){
+      if(stopped)return; stopped=true;
+      pbar.style.width='100%'; lbl.textContent='Saving...';
+      if(rec.state!=='inactive') rec.stop();
+    }
 
-    let rafExport;
+    rec.onstop=()=>{
+      clone.pause(); clone.src=''; clone.load();
+      const blob=new Blob(blobParts,{type:'video/webm'});
+      blobParts.length=0; // free RAM immediately
+      const url=URL.createObjectURL(blob);
+      const a=document.createElement('a');
+      a.href=url; a.download='fujicam_'+simKey+'_'+Date.now()+'.webm';
+      document.body.appendChild(a); a.click();
+      setTimeout(()=>{URL.revokeObjectURL(url); document.body.removeChild(a);},2000);
+      btn.classList.remove('busy');
+      lbl.textContent='Export filtered video';
+      prog.style.display='none'; pbar.style.width='0%';
+      startVideoLoop(srcEl);
+    };
+
+    // collect every 1s — smaller chunks = less RAM at once
+    rec.start(1000);
+    clone.play().catch(e=>console.error(e));
+
+    const dur=clone.duration;
+    clone.onended=()=>finish();
+    setTimeout(()=>finish(),(dur+4)*1000);
+
+    let rafEx;
     function tick(){
       if(stopped)return;
       drawFrame();
       const pct=Math.min(98,Math.round((clone.currentTime/dur)*100));
       pbar.style.width=Math.max(1,pct)+'%';
       lbl.textContent='Exporting '+pct+'%';
-      rafExport=requestAnimationFrame(tick);
+      rafEx=requestAnimationFrame(tick);
     }
-    rafExport=requestAnimationFrame(tick);
+    rafEx=requestAnimationFrame(tick);
   };
 
   clone.onerror=()=>{
-    btn.classList.remove('busy');
-    prog.style.display='none';
+    btn.classList.remove('busy'); prog.style.display='none';
     alert('Could not load video for export.');
   };
-
   clone.load();
 }
 
