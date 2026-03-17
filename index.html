@@ -669,19 +669,23 @@ function exportVideo(){
   const lbl=document.getElementById('exp-lbl');
   const prog=document.getElementById('exp-prog');
   const pbar=document.getElementById('exp-bar');
-  const vid=srcEl;
 
   btn.classList.add('busy');
   prog.style.display='block';
-  pbar.style.width='2%';
-  lbl.textContent='Exporting...';
+  pbar.style.width='1%';
+  lbl.textContent='Starting...';
 
   if(rafId){cancelAnimationFrame(rafId);rafId=null;}
 
-  // export canvas
+  // fresh hidden clone — avoids any seek/state conflict with preview
+  const clone=document.createElement('video');
+  clone.src=srcVideoURL||srcEl.src;
+  clone.muted=true;
+  clone.playsInline=true;
+  clone.preload='auto';
+
+  // export canvas — matches video resolution
   const ec=document.createElement('canvas');
-  ec.width=vid.videoWidth||640;
-  ec.height=vid.videoHeight||480;
   const ectx=ec.getContext('2d');
 
   function getCSSFilter(){
@@ -694,82 +698,89 @@ function exportVideo(){
 
   function drawFrame(){
     ectx.filter=getCSSFilter();
-    ectx.drawImage(vid,0,0,ec.width,ec.height);
+    ectx.drawImage(clone,0,0,ec.width,ec.height);
     ectx.filter='none';
     if(ctrl.vig>0){
       const vs=ctrl.vig/10*0.85;
       const gr=ectx.createRadialGradient(ec.width/2,ec.height/2,Math.min(ec.width,ec.height)*0.3,ec.width/2,ec.height/2,Math.max(ec.width,ec.height)*0.75);
-      gr.addColorStop(0,'rgba(0,0,0,0)');gr.addColorStop(1,'rgba(0,0,0,'+vs+')');
-      ectx.fillStyle=gr;ectx.fillRect(0,0,ec.width,ec.height);
+      gr.addColorStop(0,'rgba(0,0,0,0)');
+      gr.addColorStop(1,'rgba(0,0,0,'+vs+')');
+      ectx.fillStyle=gr;
+      ectx.fillRect(0,0,ec.width,ec.height);
     }
   }
 
-  const cs=ec.captureStream(30);
-  const mime=MediaRecorder.isTypeSupported('video/webm;codecs=vp9')?'video/webm;codecs=vp9':'video/webm';
-  const rec=new MediaRecorder(cs,{mimeType:mime,videoBitsPerSecond:10000000});
-  const chunks=[];
-  rec.ondataavailable=e=>{if(e.data.size>0)chunks.push(e.data);};
-  rec.onstop=()=>{
-    const blob=new Blob(chunks,{type:'video/webm'});
-    const a=document.createElement('a');
-    a.href=URL.createObjectURL(blob);
-    a.download='fujicam_'+simKey+'_'+Date.now()+'.webm';
-    document.body.appendChild(a);a.click();document.body.removeChild(a);
-    btn.classList.remove('busy');
-    lbl.textContent='Export filtered video';
-    prog.style.display='none';pbar.style.width='0%';
-    vid.muted=false;
-    startVideoLoop(vid);
-  };
+  function done(rec){
+    if(rec.state!=='inactive')rec.stop();
+  }
 
-  // key fix: restart video from scratch using a fresh clone
-  // so we dont fight with the seek state of the preview video
-  const clone=document.createElement('video');
-  clone.src=srcVideoURL||srcEl.src;
-  clone.muted=true;
-  clone.playsInline=true;
-
-  clone.oncanplay=()=>{
+  clone.onloadedmetadata=()=>{
+    ec.width=clone.videoWidth;
+    ec.height=clone.videoHeight;
     drawFrame();
-    rec.start(100);
-    clone.play().then(()=>{
-      const dur=clone.duration;
-      function tick(){
-        if(clone.ended||clone.paused){
-          lbl.textContent='Saving...';pbar.style.width='100%';
-          setTimeout(()=>{if(rec.state!=='inactive')rec.stop();},500);
-          return;
-        }
-        drawFrame_clone();
-        const pct=Math.min(99,Math.round((clone.currentTime/dur)*100));
-        pbar.style.width=Math.max(2,pct)+'%';
-        lbl.textContent='Exporting '+pct+'%';
-        requestAnimationFrame(tick);
-      }
-      function drawFrame_clone(){
-        ectx.filter=getCSSFilter();
-        ectx.drawImage(clone,0,0,ec.width,ec.height);
-        ectx.filter='none';
-        if(ctrl.vig>0){
-          const vs=ctrl.vig/10*0.85;
-          const gr=ectx.createRadialGradient(ec.width/2,ec.height/2,Math.min(ec.width,ec.height)*0.3,ec.width/2,ec.height/2,Math.max(ec.width,ec.height)*0.75);
-          gr.addColorStop(0,'rgba(0,0,0,0)');gr.addColorStop(1,'rgba(0,0,0,'+vs+')');
-          ectx.fillStyle=gr;ectx.fillRect(0,0,ec.width,ec.height);
-        }
-      }
-      clone.onended=()=>{
-        lbl.textContent='Saving...';pbar.style.width='100%';
-        setTimeout(()=>{if(rec.state!=='inactive')rec.stop();},500);
-      };
-      requestAnimationFrame(tick);
-    }).catch(e=>{
-      console.error(e);
+
+    const cs=ec.captureStream(30);
+    const mime=MediaRecorder.isTypeSupported('video/webm;codecs=vp9')?'video/webm;codecs=vp9':'video/webm';
+    const rec=new MediaRecorder(cs,{mimeType:mime,videoBitsPerSecond:8000000});
+    const chunks=[];
+
+    rec.ondataavailable=e=>{
+      if(e.data&&e.data.size>0) chunks.push(e.data);
+    };
+
+    rec.onstop=()=>{
+      // free clone
+      clone.pause();clone.src='';clone.load();
+      // download
+      const blob=new Blob(chunks,{type:'video/webm'});
+      const url=URL.createObjectURL(blob);
+      const a=document.createElement('a');
+      a.href=url; a.download='fujicam_'+simKey+'_'+Date.now()+'.webm';
+      document.body.appendChild(a);a.click();
+      setTimeout(()=>{URL.revokeObjectURL(url);document.body.removeChild(a);},1000);
+      // reset UI
       btn.classList.remove('busy');
       lbl.textContent='Export filtered video';
-      prog.style.display='none';
-      alert('Export failed: '+e.message);
-    });
+      prog.style.display='none';pbar.style.width='0%';
+      startVideoLoop(srcEl);
+    };
+
+    rec.start(500);
+    clone.play().catch(e=>console.error('play error',e));
+
+    const dur=clone.duration;
+    let stopped=false;
+
+    clone.onended=()=>{
+      if(!stopped){stopped=true;
+        pbar.style.width='100%';lbl.textContent='Saving...';
+        setTimeout(()=>done(rec),600);
+      }
+    };
+
+    // safety timeout in case onended doesn't fire
+    setTimeout(()=>{
+      if(!stopped){stopped=true;done(rec);}
+    },(dur+3)*1000);
+
+    let rafExport;
+    function tick(){
+      if(stopped)return;
+      drawFrame();
+      const pct=Math.min(98,Math.round((clone.currentTime/dur)*100));
+      pbar.style.width=Math.max(1,pct)+'%';
+      lbl.textContent='Exporting '+pct+'%';
+      rafExport=requestAnimationFrame(tick);
+    }
+    rafExport=requestAnimationFrame(tick);
   };
+
+  clone.onerror=()=>{
+    btn.classList.remove('busy');
+    prog.style.display='none';
+    alert('Could not load video for export.');
+  };
+
   clone.load();
 }
 
