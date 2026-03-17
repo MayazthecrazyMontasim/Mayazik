@@ -690,6 +690,14 @@ function exportFilteredVideo(){
   if(!glReady)glReady=initGL();
 
   const cs=mc.captureStream(30);
+  // capture audio directly from the source video element
+  if(vid.captureStream){
+    const vs=vid.captureStream();
+    vs.getAudioTracks().forEach(t=>cs.addTrack(t));
+  } else if(vid.mozCaptureStream){
+    const vs=vid.mozCaptureStream();
+    vs.getAudioTracks().forEach(t=>cs.addTrack(t));
+  }
   const mime=MediaRecorder.isTypeSupported('video/webm;codecs=vp9')?'video/webm;codecs=vp9':'video/webm';
   const rec=new MediaRecorder(cs,{mimeType:mime});
   const chunks=[];
