@@ -673,22 +673,54 @@ function exportVideo(){
 
   btn.classList.add('busy');
   prog.style.display='block';
-  pbar.style.width='5%';
+  pbar.style.width='2%';
   lbl.textContent='Exporting 0%';
 
   if(rafId){cancelAnimationFrame(rafId);rafId=null;}
 
-  const mc=document.getElementById('main-canvas');
-  mc.width=vid.videoWidth;
-  mc.height=vid.videoHeight;
-  mc.style.display='block';
+  // dedicated export canvas - full res, no filter CPU cost
+  const ec=document.createElement('canvas');
+  ec.width=vid.videoWidth;
+  ec.height=vid.videoHeight;
+  const ectx=ec.getContext('2d');
 
-  // draw first frame immediately so canvas is not blank when recorder starts
-  const ctx=mc.getContext('2d');
-  ctx.drawImage(vid,0,0,mc.width,mc.height);
-  applyFiltersCPU(mc);
+  // build CSS filter string matching current sim + controls
+  function getCSSFilter(){
+    const s=SIMS[simKey];
+    const d=getDialExtras();
+    const brightness=1+s.br/100+d.iso+d.exp;
+    const contrast=1+s.co/100;
+    const saturate=Math.max(0,1+(s.sa+ctrl.col*10)/100);
+    const sepia=simKey==='nn'?0.15:simKey==='cc'?0.1:0;
+    return `brightness(${brightness.toFixed(2)}) contrast(${contrast.toFixed(2)}) saturate(${saturate.toFixed(2)}) sepia(${sepia})`;
+  }
 
-  const cs=mc.captureStream(30);
+  // draw video frame with CSS filter applied via canvas filter property
+  function drawFrame(){
+    ectx.filter=getCSSFilter();
+    ectx.drawImage(vid,0,0,ec.width,ec.height);
+    ectx.filter='none';
+    // vignette
+    if(ctrl.vig>0){
+      const vs=ctrl.vig/10*0.85;
+      const gr=ectx.createRadialGradient(ec.width/2,ec.height/2,Math.min(ec.width,ec.height)*0.3,ec.width/2,ec.height/2,Math.max(ec.width,ec.height)*0.75);
+      gr.addColorStop(0,'rgba(0,0,0,0)');
+      gr.addColorStop(1,'rgba(0,0,0,'+vs+')');
+      ectx.fillStyle=gr;
+      ectx.fillRect(0,0,ec.width,ec.height);
+    }
+  }
+
+  // draw first frame so canvas is not blank
+  drawFrame();
+
+  const cs=ec.captureStream(30);
+  // add audio
+  try{
+    const avs=vid.captureStream?vid.captureStream():vid.mozCaptureStream?vid.mozCaptureStream():null;
+    if(avs)avs.getAudioTracks().forEach(t=>cs.addTrack(t.clone()));
+  }catch(e){}
+
   const mime=MediaRecorder.isTypeSupported('video/webm;codecs=vp9')?'video/webm;codecs=vp9':'video/webm';
   const rec=new MediaRecorder(cs,{mimeType:mime,videoBitsPerSecond:10000000});
   const chunks=[];
@@ -707,7 +739,6 @@ function exportVideo(){
     startVideoLoop(vid);
   };
 
-  // start recorder immediately — no waiting
   rec.start(100);
   vid.currentTime=0;
   vid.muted=true;
@@ -717,13 +748,13 @@ function exportVideo(){
   vid.onended=()=>{
     pbar.style.width='100%';
     lbl.textContent='Saving...';
-    setTimeout(()=>{if(rec.state!=='inactive')rec.stop();},400);
+    setTimeout(()=>{if(rec.state!=='inactive')rec.stop();},500);
   };
 
+  // lightweight render loop - CSS filter is GPU accelerated, near zero CPU cost
   function tick(){
     if(vid.paused||vid.ended)return;
-    ctx.drawImage(vid,0,0,mc.width,mc.height);
-    applyFiltersCPU(mc);
+    drawFrame();
     const pct=Math.min(99,Math.round((vid.currentTime/duration)*100));
     pbar.style.width=pct+'%';
     lbl.textContent='Exporting '+pct+'%';
