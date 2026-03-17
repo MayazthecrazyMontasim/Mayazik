@@ -682,36 +682,28 @@ function exportFilteredVideo(){
   const bar=document.getElementById('export-progress-bar');
   if(btn.classList.contains('exporting'))return;
 
-  if(!glReady)glReady=initGL();
-
-  // Use a dedicated offscreen export canvas — don't touch main-canvas
-  const ec=document.createElement('canvas');
-  ec.width=vid.videoWidth; ec.height=vid.videoHeight;
-
-  // Temporarily point WebGL at the export canvas
-  const savedCanvas=glCanvas;
-  glCanvas=ec;
-  gl=ec.getContext('webgl',{preserveDrawingBuffer:true,antialias:false});
-  glReady=initGLOnCanvas(ec);
-
   const duration=vid.duration;
+  if(!duration||isNaN(duration)){alert('Video not ready.');return;}
+
+  // Offscreen canvas at full video resolution
+  const ec=document.createElement('canvas');
+  ec.width=vid.videoWidth||640;
+  ec.height=vid.videoHeight||480;
+  const ectx=ec.getContext('2d');
+
   const chunks=[];
-
-  btn.classList.add('exporting');
-  prog.style.display='block';
-  lbl.textContent='Starting export...';
-
-  // Capture export canvas stream
   const cs=ec.captureStream(30);
+
+  // Add audio from video
+  try{
+    const avs=vid.captureStream?vid.captureStream():vid.mozCaptureStream?vid.mozCaptureStream():null;
+    if(avs)avs.getAudioTracks().forEach(t=>cs.addTrack(t));
+  }catch(e){}
+
   const mime=MediaRecorder.isTypeSupported('video/webm;codecs=vp9')?'video/webm;codecs=vp9':'video/webm';
-  const rec=new MediaRecorder(cs,{mimeType:mime,videoBitsPerSecond:12000000});
+  const rec=new MediaRecorder(cs,{mimeType:mime,videoBitsPerSecond:8000000});
   rec.ondataavailable=e=>{if(e.data.size>0)chunks.push(e.data);};
   rec.onstop=()=>{
-    // restore WebGL back to main canvas
-    glCanvas=savedCanvas;
-    gl=savedCanvas.getContext('webgl',{preserveDrawingBuffer:true,antialias:false});
-    glReady=initGLOnCanvas(savedCanvas);
-    // save file
     const blob=new Blob(chunks,{type:'video/webm'});
     const a=document.createElement('a');
     a.href=URL.createObjectURL(blob);
@@ -720,76 +712,84 @@ function exportFilteredVideo(){
     btn.classList.remove('exporting');
     lbl.textContent='Export filtered video';
     prog.style.display='none';bar.style.width='0%';
-    vid.pause();vid.currentTime=0;
+    vid.muted=false;vid.pause();vid.currentTime=0;
     startVideoLoop(vid);
   };
 
-  rec.start(100);
-  vid.currentTime=0;
-  vid.playbackRate=1;
-  vid.muted=true;
+  btn.classList.add('exporting');
+  prog.style.display='block';
+  lbl.textContent='Exporting...';
+  bar.style.width='0%';
 
-  // Use requestVideoFrameCallback if available (Chrome/Edge) — perfect sync
-  // Fallback: rAF loop tied to video currentTime
-  function renderFrame(){
-    if(!renderGL(vid,false)){
-      ec.getContext('2d').drawImage(vid,0,0,ec.width,ec.height);
+  vid.muted=true;
+  vid.currentTime=0;
+  rec.start(100);
+
+  function drawFilteredFrame(){
+    // draw video frame to offscreen canvas
+    ectx.drawImage(vid,0,0,ec.width,ec.height);
+    // apply CPU filters (reliable, no WebGL context issues)
+    const id=ectx.getImageData(0,0,ec.width,ec.height);
+    const d=id.data;
+    const s=SIMS[simKey],d2=getDialExtras();
+    const bAdj=s.br/100+d2.iso+d2.exp,cAdj=1+s.co/100,sAdj=1+(s.sa+ctrl.col*10)/100;
+    const grAmt=(ctrl.grain+(s.gr||0))/2,hlS=ctrl.hl*8,shS=ctrl.sh*8;
+    const fade=s.fade||0,lR=s.liftR||0,lG=s.liftG||0,lB=s.liftB||0,hsc=s.hsc||0;
+    for(let i=0;i<d.length;i+=4){
+      let r=d[i]/255,g=d[i+1]/255,b=d[i+2]/255;
+      r=(r-.5)*cAdj+.5+bAdj;g=(g-.5)*cAdj+.5+bAdj;b=(b-.5)*cAdj+.5+bAdj;
+      const l=.299*r+.587*g+.114*b;r=l+(r-l)*sAdj;g=l+(g-l)*sAdj;b=l+(b-l)*sAdj;
+      const sm=Math.max(0,1-l*3),hm=Math.max(0,l*2-1);
+      r+=s.sh[0]*sm+s.mt[0];g+=s.sh[1]*sm+s.mt[1];b+=s.sh[2]*sm+s.mt[2];
+      r+=hm*hlS/255;g+=hm*hlS/255;b+=hm*hlS/255;
+      r+=sm*shS/255;g+=sm*shS/255;b+=sm*shS/255;
+      r*=s.r;g*=s.g;b*=s.b;r*=d2.wb[0];g*=d2.wb[1];b*=d2.wb[2];
+      if(fade){r=r*(1-fade)+fade;g=g*(1-fade)+fade;b=b*(1-fade)+fade;}
+      if(lR){r+=lR*sm;g+=lG*sm;b+=lB*sm;}
+      if(hsc){const cy=Math.max(0,Math.min(g,b)-r);g+=hsc*cy*.5;b+=hsc*cy*.3;}
+      if(grAmt>0){const gn=(Math.random()-.5)*grAmt*.025;r+=gn;g+=gn*.9;b+=gn*.8;}
+      d[i]=Math.max(0,Math.min(255,Math.round(r*255)));
+      d[i+1]=Math.max(0,Math.min(255,Math.round(g*255)));
+      d[i+2]=Math.max(0,Math.min(255,Math.round(b*255)));
     }
-    const pct=Math.min(100,Math.round((vid.currentTime/duration)*100));
-    lbl.textContent='Exporting... '+pct+'%';
-    bar.style.width=pct+'%';
+    ectx.putImageData(id,0,0);
   }
 
   if(vid.requestVideoFrameCallback){
-    function onFrame(now,meta){
-      renderFrame();
-      if(vid.currentTime<duration-0.05&&!vid.ended){
+    function onFrame(){
+      drawFilteredFrame();
+      const pct=Math.min(99,Math.round((vid.currentTime/duration)*100));
+      lbl.textContent='Exporting... '+pct+'%';
+      bar.style.width=pct+'%';
+      if(!vid.ended&&vid.currentTime<duration-0.05){
         vid.requestVideoFrameCallback(onFrame);
       } else {
-        setTimeout(()=>{rec.stop();vid.muted=false;},300);
+        lbl.textContent='Saving...';bar.style.width='100%';
+        setTimeout(()=>rec.stop(),500);
       }
     }
     vid.requestVideoFrameCallback(onFrame);
-    vid.play();
+    vid.play().catch(e=>console.error(e));
   } else {
-    // rAF fallback
-    let lastTime=-1;
-    function rafExport(){
+    // fallback for Safari / Firefox
+    let last=-1;
+    function rafLoop(){
       if(vid.ended||vid.currentTime>=duration-0.05){
-        setTimeout(()=>{rec.stop();vid.muted=false;},300);
+        lbl.textContent='Saving...';bar.style.width='100%';
+        setTimeout(()=>rec.stop(),500);
         return;
       }
-      if(vid.currentTime!==lastTime){
-        lastTime=vid.currentTime;
-        renderFrame();
+      if(vid.currentTime!==last){
+        last=vid.currentTime;
+        drawFilteredFrame();
+        const pct=Math.min(99,Math.round((vid.currentTime/duration)*100));
+        lbl.textContent='Exporting... '+pct+'%';
+        bar.style.width=pct+'%';
       }
-      requestAnimationFrame(rafExport);
+      requestAnimationFrame(rafLoop);
     }
-    vid.play().then(()=>requestAnimationFrame(rafExport));
+    vid.play().then(()=>requestAnimationFrame(rafLoop)).catch(e=>console.error(e));
   }
-}
-
-function initGLOnCanvas(canvas){
-  gl=canvas.getContext('webgl',{preserveDrawingBuffer:true,antialias:false});
-  if(!gl)return false;
-  glCanvas=canvas;
-  const vs=`attribute vec2 a_pos;attribute vec2 a_uv;varying vec2 v_uv;uniform bool u_flip;void main(){v_uv=u_flip?vec2(1.-a_uv.x,a_uv.y):a_uv;gl_Position=vec4(a_pos,0,1);}`;
-  const fs=`precision mediump float;varying vec2 v_uv;uniform sampler2D u_tex;uniform float u_br,u_co,u_sa;uniform vec3 u_sh,u_mt,u_mul,u_wb,u_lift;uniform float u_fade,u_hsc,u_vig,u_hl,u_shadow,u_grain,u_time;float rand(vec2 c){return fract(sin(dot(c,vec2(12.9898,78.233)))*43758.5453);}void main(){vec3 c=texture2D(u_tex,v_uv).rgb;c=(c-.5)*u_co+.5+u_br;float l=dot(c,vec3(.299,.587,.114));c=mix(vec3(l),c,u_sa);float sm=max(0.,1.-l*3.),hm=max(0.,l*2.-1.);c+=u_sh*sm+u_mt;c+=hm*u_hl+sm*u_shadow;c*=u_mul;c*=u_wb;if(u_fade>0.)c=mix(c,vec3(1.),u_fade);c+=u_lift*sm;if(u_hsc!=0.){float cy=max(0.,min(c.g,c.b)-c.r);c.g+=u_hsc*cy*.5;c.b+=u_hsc*cy*.3;}if(u_grain>0.){float g=(rand(v_uv+u_time)-.5)*u_grain*.04;c+=vec3(g,g*.9,g*.8);}if(u_vig>0.){vec2 uv2=v_uv*2.-1.;float d=length(uv2);float v=smoothstep(.4,1.4,d)*u_vig*.85;c=mix(c,vec3(0.),v);}gl_FragColor=vec4(clamp(c,0.,1.),1.);}`;
-  const mksh=(t,src)=>{const s=gl.createShader(t);gl.shaderSource(s,src);gl.compileShader(s);return s;};
-  glProg=gl.createProgram();
-  gl.attachShader(glProg,mksh(gl.VERTEX_SHADER,vs));
-  gl.attachShader(glProg,mksh(gl.FRAGMENT_SHADER,fs));
-  gl.linkProgram(glProg);
-  if(!gl.getProgramParameter(glProg,gl.LINK_STATUS))return false;
-  gl.useProgram(glProg);
-  const buf=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,buf);
-  gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,0,1,1,-1,1,1,-1,1,0,0,1,1,1,0]),gl.STATIC_DRAW);
-  const ap=gl.getAttribLocation(glProg,'a_pos');gl.enableVertexAttribArray(ap);gl.vertexAttribPointer(ap,2,gl.FLOAT,false,16,0);
-  const au=gl.getAttribLocation(glProg,'a_uv');gl.enableVertexAttribArray(au);gl.vertexAttribPointer(au,2,gl.FLOAT,false,16,8);
-  glTex=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,glTex);
-  [gl.TEXTURE_WRAP_S,gl.TEXTURE_WRAP_T].forEach(p=>gl.texParameteri(gl.TEXTURE_2D,p,gl.CLAMP_TO_EDGE));
-  [gl.TEXTURE_MIN_FILTER,gl.TEXTURE_MAG_FILTER].forEach(p=>gl.texParameteri(gl.TEXTURE_2D,p,gl.LINEAR));
-  return true;
 }
 
 function doSave(){if(!liveStream&&!srcEl){alert('Open camera or load a photo first.');return;}if(mode==='video'&&isRec){stopRec();return;}snapPhoto();}
