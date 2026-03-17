@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#fff8f2">
-<title>Mayazik</title>
+<title>FUJI CAM</title>
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;1,500&family=DM+Mono:wght@400;500&family=Lato:wght@400;700&display=swap" rel="stylesheet">
 <style>
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
@@ -683,70 +683,113 @@ function exportFilteredVideo(){
   if(btn.classList.contains('exporting'))return;
 
   if(!glReady)glReady=initGL();
-  const mc=document.getElementById('main-canvas');
-  const origW=mc.width,origH=mc.height;
-  const vw=vid.videoWidth,vh=vid.videoHeight;
-  mc.width=vw;mc.height=vh;
+
+  // Use a dedicated offscreen export canvas — don't touch main-canvas
+  const ec=document.createElement('canvas');
+  ec.width=vid.videoWidth; ec.height=vid.videoHeight;
+
+  // Temporarily point WebGL at the export canvas
+  const savedCanvas=glCanvas;
+  glCanvas=ec;
+  gl=ec.getContext('webgl',{preserveDrawingBuffer:true,antialias:false});
+  glReady=initGLOnCanvas(ec);
 
   const duration=vid.duration;
-  const fps=30;
-  const totalFrames=Math.ceil(duration*fps);
   const chunks=[];
 
   btn.classList.add('exporting');
   prog.style.display='block';
-  lbl.textContent='Preparing export...';
+  lbl.textContent='Starting export...';
 
-  // Use MediaRecorder on canvas stream for video
-  const cs=mc.captureStream(fps);
+  // Capture export canvas stream
+  const cs=ec.captureStream(30);
   const mime=MediaRecorder.isTypeSupported('video/webm;codecs=vp9')?'video/webm;codecs=vp9':'video/webm';
-  const rec=new MediaRecorder(cs,{mimeType:mime,videoBitsPerSecond:8000000});
+  const rec=new MediaRecorder(cs,{mimeType:mime,videoBitsPerSecond:12000000});
   rec.ondataavailable=e=>{if(e.data.size>0)chunks.push(e.data);};
   rec.onstop=()=>{
+    // restore WebGL back to main canvas
+    glCanvas=savedCanvas;
+    gl=savedCanvas.getContext('webgl',{preserveDrawingBuffer:true,antialias:false});
+    glReady=initGLOnCanvas(savedCanvas);
+    // save file
     const blob=new Blob(chunks,{type:'video/webm'});
     const a=document.createElement('a');
     a.href=URL.createObjectURL(blob);
     a.download='fujicam_'+simKey+'_'+Date.now()+'.webm';
     document.body.appendChild(a);a.click();document.body.removeChild(a);
-    mc.width=origW;mc.height=origH;
     btn.classList.remove('exporting');
     lbl.textContent='Export filtered video';
     prog.style.display='none';bar.style.width='0%';
-    vid.muted=false;
+    vid.pause();vid.currentTime=0;
     startVideoLoop(vid);
   };
 
-  // Frame-by-frame seek export — no real-time playback lag
-  vid.pause();
+  rec.start(100);
+  vid.currentTime=0;
+  vid.playbackRate=1;
   vid.muted=true;
-  rec.start();
 
-  let frameIdx=0;
-  const frameDur=1/fps;
-
-  function processNextFrame(){
-    if(frameIdx>=totalFrames){
-      setTimeout(()=>rec.stop(),300);
-      return;
+  // Use requestVideoFrameCallback if available (Chrome/Edge) — perfect sync
+  // Fallback: rAF loop tied to video currentTime
+  function renderFrame(){
+    if(!renderGL(vid,false)){
+      ec.getContext('2d').drawImage(vid,0,0,ec.width,ec.height);
     }
-    const pct=Math.round((frameIdx/totalFrames)*100);
+    const pct=Math.min(100,Math.round((vid.currentTime/duration)*100));
     lbl.textContent='Exporting... '+pct+'%';
     bar.style.width=pct+'%';
-    vid.currentTime=frameIdx*frameDur;
   }
 
-  vid.onseeked=function(){
-    // render this frame through filter
-    if(!renderGL(vid,false)){
-      mc.getContext('2d').drawImage(vid,0,0,vw,vh);
-      applyFiltersCPU(mc);
+  if(vid.requestVideoFrameCallback){
+    function onFrame(now,meta){
+      renderFrame();
+      if(vid.currentTime<duration-0.05&&!vid.ended){
+        vid.requestVideoFrameCallback(onFrame);
+      } else {
+        setTimeout(()=>{rec.stop();vid.muted=false;},300);
+      }
     }
-    frameIdx++;
-    // small timeout lets MediaRecorder capture the frame
-    setTimeout(processNextFrame,1000/fps);
-  };
+    vid.requestVideoFrameCallback(onFrame);
+    vid.play();
+  } else {
+    // rAF fallback
+    let lastTime=-1;
+    function rafExport(){
+      if(vid.ended||vid.currentTime>=duration-0.05){
+        setTimeout(()=>{rec.stop();vid.muted=false;},300);
+        return;
+      }
+      if(vid.currentTime!==lastTime){
+        lastTime=vid.currentTime;
+        renderFrame();
+      }
+      requestAnimationFrame(rafExport);
+    }
+    vid.play().then(()=>requestAnimationFrame(rafExport));
+  }
+}
 
-  processNextFrame();
+function initGLOnCanvas(canvas){
+  gl=canvas.getContext('webgl',{preserveDrawingBuffer:true,antialias:false});
+  if(!gl)return false;
+  glCanvas=canvas;
+  const vs=`attribute vec2 a_pos;attribute vec2 a_uv;varying vec2 v_uv;uniform bool u_flip;void main(){v_uv=u_flip?vec2(1.-a_uv.x,a_uv.y):a_uv;gl_Position=vec4(a_pos,0,1);}`;
+  const fs=`precision mediump float;varying vec2 v_uv;uniform sampler2D u_tex;uniform float u_br,u_co,u_sa;uniform vec3 u_sh,u_mt,u_mul,u_wb,u_lift;uniform float u_fade,u_hsc,u_vig,u_hl,u_shadow,u_grain,u_time;float rand(vec2 c){return fract(sin(dot(c,vec2(12.9898,78.233)))*43758.5453);}void main(){vec3 c=texture2D(u_tex,v_uv).rgb;c=(c-.5)*u_co+.5+u_br;float l=dot(c,vec3(.299,.587,.114));c=mix(vec3(l),c,u_sa);float sm=max(0.,1.-l*3.),hm=max(0.,l*2.-1.);c+=u_sh*sm+u_mt;c+=hm*u_hl+sm*u_shadow;c*=u_mul;c*=u_wb;if(u_fade>0.)c=mix(c,vec3(1.),u_fade);c+=u_lift*sm;if(u_hsc!=0.){float cy=max(0.,min(c.g,c.b)-c.r);c.g+=u_hsc*cy*.5;c.b+=u_hsc*cy*.3;}if(u_grain>0.){float g=(rand(v_uv+u_time)-.5)*u_grain*.04;c+=vec3(g,g*.9,g*.8);}if(u_vig>0.){vec2 uv2=v_uv*2.-1.;float d=length(uv2);float v=smoothstep(.4,1.4,d)*u_vig*.85;c=mix(c,vec3(0.),v);}gl_FragColor=vec4(clamp(c,0.,1.),1.);}`;
+  const mksh=(t,src)=>{const s=gl.createShader(t);gl.shaderSource(s,src);gl.compileShader(s);return s;};
+  glProg=gl.createProgram();
+  gl.attachShader(glProg,mksh(gl.VERTEX_SHADER,vs));
+  gl.attachShader(glProg,mksh(gl.FRAGMENT_SHADER,fs));
+  gl.linkProgram(glProg);
+  if(!gl.getProgramParameter(glProg,gl.LINK_STATUS))return false;
+  gl.useProgram(glProg);
+  const buf=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,buf);
+  gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,0,1,1,-1,1,1,-1,1,0,0,1,1,1,0]),gl.STATIC_DRAW);
+  const ap=gl.getAttribLocation(glProg,'a_pos');gl.enableVertexAttribArray(ap);gl.vertexAttribPointer(ap,2,gl.FLOAT,false,16,0);
+  const au=gl.getAttribLocation(glProg,'a_uv');gl.enableVertexAttribArray(au);gl.vertexAttribPointer(au,2,gl.FLOAT,false,16,8);
+  glTex=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,glTex);
+  [gl.TEXTURE_WRAP_S,gl.TEXTURE_WRAP_T].forEach(p=>gl.texParameteri(gl.TEXTURE_2D,p,gl.CLAMP_TO_EDGE));
+  [gl.TEXTURE_MIN_FILTER,gl.TEXTURE_MAG_FILTER].forEach(p=>gl.texParameteri(gl.TEXTURE_2D,p,gl.LINEAR));
+  return true;
 }
 
 function doSave(){if(!liveStream&&!srcEl){alert('Open camera or load a photo first.');return;}if(mode==='video'&&isRec){stopRec();return;}snapPhoto();}
