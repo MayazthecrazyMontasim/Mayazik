@@ -573,6 +573,7 @@ function loadFile(input){
       srcEl=vid;vid.play().catch(()=>{});
       if(mode==='photo')setMode('video');
       startVideoLoop(vid);
+      document.getElementById('export-bar').style.display='block';
     };
     vid.load();
   }
