@@ -673,19 +673,21 @@ function exportVideo(){
 
   btn.classList.add('busy');
   prog.style.display='block';
-  pbar.style.width='0%';
-  lbl.textContent='Starting...';
+  pbar.style.width='5%';
+  lbl.textContent='Exporting 0%';
 
-  // stop preview loop
   if(rafId){cancelAnimationFrame(rafId);rafId=null;}
 
-  // use main canvas at full res
   const mc=document.getElementById('main-canvas');
   mc.width=vid.videoWidth;
   mc.height=vid.videoHeight;
   mc.style.display='block';
 
-  // start recording the canvas
+  // draw first frame immediately so canvas is not blank when recorder starts
+  const ctx=mc.getContext('2d');
+  ctx.drawImage(vid,0,0,mc.width,mc.height);
+  applyFiltersCPU(mc);
+
   const cs=mc.captureStream(30);
   const mime=MediaRecorder.isTypeSupported('video/webm;codecs=vp9')?'video/webm;codecs=vp9':'video/webm';
   const rec=new MediaRecorder(cs,{mimeType:mime,videoBitsPerSecond:10000000});
@@ -700,42 +702,34 @@ function exportVideo(){
     btn.classList.remove('busy');
     lbl.textContent='Export filtered video';
     prog.style.display='none';pbar.style.width='0%';
-    vid.muted=false;
+    vid.muted=false;vid.playbackRate=1;
     vid.currentTime=0;
     startVideoLoop(vid);
   };
 
-  // reset video to start
+  // start recorder immediately — no waiting
+  rec.start(100);
   vid.currentTime=0;
   vid.muted=true;
   vid.playbackRate=1;
+  vid.play().catch(e=>console.error(e));
 
-  // wait for seek to complete before starting
-  vid.onseeked=function(){
-    vid.onseeked=null;
-    rec.start(100);
-
-    vid.play().catch(e=>console.error(e));
-
-    // render loop — draw+filter every frame
-    function tick(){
-      if(vid.paused||vid.ended){
-        setTimeout(()=>rec.stop(),300);
-        return;
-      }
-      const ctx=mc.getContext('2d');
-      ctx.drawImage(vid,0,0,mc.width,mc.height);
-      applyFiltersCPU(mc);
-      const pct=Math.min(99,Math.round((vid.currentTime/duration)*100));
-      pbar.style.width=pct+'%';
-      lbl.textContent='Exporting... '+pct+'%';
-      requestAnimationFrame(tick);
-    }
-    requestAnimationFrame(tick);
-
-    // safety: stop when video ends
-    vid.onended=()=>setTimeout(()=>{if(rec.state!=='inactive')rec.stop();},300);
+  vid.onended=()=>{
+    pbar.style.width='100%';
+    lbl.textContent='Saving...';
+    setTimeout(()=>{if(rec.state!=='inactive')rec.stop();},400);
   };
+
+  function tick(){
+    if(vid.paused||vid.ended)return;
+    ctx.drawImage(vid,0,0,mc.width,mc.height);
+    applyFiltersCPU(mc);
+    const pct=Math.min(99,Math.round((vid.currentTime/duration)*100));
+    pbar.style.width=pct+'%';
+    lbl.textContent='Exporting '+pct+'%';
+    requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
 }
 
 function doSave(){if(!liveStream&&!srcEl){alert('Open camera or load a photo first.');return;}if(mode==='video'&&isRec){stopRec();return;}snapPhoto();}
