@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#fff8f2">
-<title>Mayazik</title>
+<title>FUJI CAM</title>
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;1,500&family=DM+Mono:wght@400;500&family=Lato:wght@400;700&display=swap" rel="stylesheet">
 <style>
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
@@ -128,6 +128,11 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:18px;heigh
 .noclips{font-family:'DM Mono',monospace;font-size:10px;color:var(--ink3);text-align:center;padding:16px 0}
 
 /* ACTION BAR */
+.export-bar{padding:0 20px 10px;display:none}
+.export-btn{width:100%;font-family:'DM Mono',monospace;font-size:11px;letter-spacing:1.5px;text-transform:uppercase;background:var(--jade);color:#fff;border:none;border-radius:14px;padding:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:10px;box-shadow:0 4px 16px rgba(61,184,156,.4)}
+.export-btn.busy{background:#aaa;pointer-events:none}
+.exp-prog{height:4px;background:var(--ink4);border-radius:2px;margin-top:8px;display:none;overflow:hidden}
+.exp-prog-bar{height:100%;background:var(--jade);width:0%;border-radius:2px;transition:width .3s}
 .action-bar{position:sticky;bottom:0;z-index:50;background:rgba(255,248,242,.96);backdrop-filter:blur(12px);border-top:1px solid var(--border);padding:14px 20px;padding-bottom:calc(14px + env(safe-area-inset-bottom,0px));display:flex;align-items:center;justify-content:space-between;gap:12px}
 
 
@@ -151,7 +156,7 @@ input[type=file]{display:none}
 <body>
 
 <header class="hdr">
-  <div class="logo">Maya<em>zik</em></div>
+  <div class="logo">fuji<em>cam</em></div>
   <div style="display:flex;align-items:center;gap:10px">
     <div class="hist" id="histogram"></div>
     <div class="badge" id="mbadge">PHOTO</div>
@@ -241,6 +246,13 @@ input[type=file]{display:none}
 </div>
 
 
+<div class="export-bar" id="export-bar">
+  <button class="export-btn" id="export-btn" onclick="exportVideo()">
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 2v9M4 8l4 4 4-4" stroke="#fff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M2 13h12" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/></svg>
+    <span id="exp-lbl">Export filtered video</span>
+  </button>
+  <div class="exp-prog" id="exp-prog"><div class="exp-prog-bar" id="exp-bar"></div></div>
+</div>
 <div class="action-bar">
   <div class="sa" onclick="document.getElementById('fin').click()">
     <div class="sico"><svg width="22" height="22" viewBox="0 0 22 22" fill="none"><rect x="2" y="2" width="18" height="18" rx="3.5" stroke="#4a453f" stroke-width="1.5"/><circle cx="7.5" cy="7.5" r="1.8" fill="#4a453f"/><path d="M2 15l6-5 3.5 3.5 3.5-4 5 5.5" stroke="#4a453f" stroke-width="1.5" stroke-linejoin="round"/></svg></div>
@@ -353,6 +365,7 @@ function openCamera(){
   navigator.mediaDevices.getUserMedia({video:{facingMode:facing,width:{ideal:1920},height:{ideal:1080},frameRate:{ideal:30}},audio:false})
   .then(s=>{
     liveStream=s;srcEl=null;
+    document.getElementById('export-bar').style.display='none';
     const rv=document.getElementById('raw-video');
     rv.srcObject=s;rv.play().catch(()=>{});
     document.getElementById('idle').style.display='none';
@@ -645,6 +658,87 @@ function togClip(i){
 
 function dlClip(i){const a=document.createElement('a');a.href=clips[i].url;a.download='fujicam_clip'+(i+1)+'_'+simKey+'.webm';document.body.appendChild(a);a.click();document.body.removeChild(a);}
 function delClip(i){URL.revokeObjectURL(clips[i].url);clips.splice(i,1);renderClips();}
+
+function exportVideo(){
+  if(!srcEl||srcEl.tagName!=='VIDEO'){alert('Load a video first.');return;}
+  const btn=document.getElementById('export-btn');
+  if(btn.classList.contains('busy'))return;
+  const lbl=document.getElementById('exp-lbl');
+  const prog=document.getElementById('exp-prog');
+  const bar=document.getElementById('exp-bar');
+  const vid=srcEl;
+  const duration=vid.duration;
+
+  // stop preview loop
+  if(rafId){cancelAnimationFrame(rafId);rafId=null;}
+
+  // resize main canvas to full video res
+  const mc=document.getElementById('main-canvas');
+  mc.width=vid.videoWidth;
+  mc.height=vid.videoHeight;
+  mc.style.display='block';
+
+  // record the canvas stream
+  const cs=mc.captureStream(30);
+  // add audio
+  try{
+    const avs=vid.captureStream?vid.captureStream():null;
+    if(avs)avs.getAudioTracks().forEach(t=>cs.addTrack(t));
+  }catch(e){}
+
+  const mime=MediaRecorder.isTypeSupported('video/webm;codecs=vp9')?'video/webm;codecs=vp9':'video/webm';
+  const rec=new MediaRecorder(cs,{mimeType:mime,videoBitsPerSecond:6000000});
+  const chunks=[];
+  rec.ondataavailable=e=>{if(e.data.size>0)chunks.push(e.data);};
+  rec.onstop=()=>{
+    const blob=new Blob(chunks,{type:'video/webm'});
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(blob);
+    a.download='fujicam_'+simKey+'_'+Date.now()+'.webm';
+    document.body.appendChild(a);a.click();document.body.removeChild(a);
+    btn.classList.remove('busy');
+    lbl.textContent='Export filtered video';
+    prog.style.display='none';bar.style.width='0%';
+    vid.muted=false;
+    startVideoLoop(vid);
+  };
+
+  btn.classList.add('busy');
+  prog.style.display='block';
+  lbl.textContent='Exporting...';
+  bar.style.width='0%';
+
+  vid.currentTime=0;
+  vid.muted=true;
+  rec.start(200);
+
+  // simple rAF loop — draw each frame through CPU filter onto canvas
+  let done=false;
+  vid.onended=()=>{
+    if(!done){done=true;setTimeout(()=>rec.stop(),400);}
+  };
+
+  function tick(){
+    if(done)return;
+    if(vid.currentTime>=duration-0.1){
+      if(!done){done=true;setTimeout(()=>rec.stop(),400);}
+      return;
+    }
+    // draw + filter
+    const ctx=mc.getContext('2d');
+    ctx.drawImage(vid,0,0,mc.width,mc.height);
+    applyFiltersCPU(mc);
+    // update progress
+    const pct=Math.round((vid.currentTime/duration)*100);
+    lbl.textContent='Exporting... '+pct+'%';
+    bar.style.width=pct+'%';
+    requestAnimationFrame(tick);
+  }
+
+  vid.play().then(()=>requestAnimationFrame(tick)).catch(e=>{
+    console.error(e);rec.stop();
+  });
+}
 
 function doSave(){if(!liveStream&&!srcEl){alert('Open camera or load a photo first.');return;}if(mode==='video'&&isRec){stopRec();return;}snapPhoto();}
 </script>
